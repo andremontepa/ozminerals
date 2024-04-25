@@ -1,0 +1,248 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Rwmake.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\stdwin.ch"
+#line 14 "Rwmake.ch"
+#line 2 "c:\totvs\projetos_prod\5..pontos de entrada\compras\\c:/totvs/projetos_prod/5..pontos de entrada/compras/mt100agr.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "Protheus.ch"
+#line 3 "c:\totvs\projetos_prod\5..pontos de entrada\compras\\c:/totvs/projetos_prod/5..pontos de entrada/compras/mt100agr.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Topconn.ch"
+#line 4 "c:\totvs\projetos_prod\5..pontos de entrada\compras\\c:/totvs/projetos_prod/5..pontos de entrada/compras/mt100agr.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TBICONN.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Ap5Mail.ch"
+#line 10 "TBICONN.CH"
+#line 22 "c:\totvs\projetos_prod\5..pontos de entrada\compras\\c:/totvs/projetos_prod/5..pontos de entrada/compras/mt100agr.prw"
+Function U_MT100AGR
+
+	if INCLUI
+		_cSQL := "SELECT COUNT(*) QTDE FROM "+RetSqlName("SE2")+" "
+		_cSQL += " WHERE E2_PREFIXO = 'PRO' "
+		_cSQL += " AND D_E_L_E_T_ <> '*' "
+		_cSQL += " AND E2_SALDO > 0  "
+		_cSQL += " AND E2_FORNECE = '"+cA100For+"' "
+		_cSQL += " AND E2_LOJA    = '"+cLoja+"' "
+		_cSQL += " AND E2_FILIAL  = '"+xFilial("SE2")+"' "
+
+		If Select("TMP") > 0
+			TMP->(dbCloseArea())
+		EndIf
+		dbUseArea( .T. ,"TOPCONN", TCGenQry(,,_cSQL), "TMP", .F. , .T. )
+
+
+	    if TMP->QTDE > 0 .and.  !IsInCallStack("U_MTUFOPRO")
+			if Iif(FindFunction("APMsgYesNo"), APMsgYesNo("Existem Provisões a Pagar para este fornecedor. Deseja fazer a compensação?",), (cMsgYesNo:="MsgYesNo", &cMsgYesNo.("Existem Provisões a Pagar para este fornecedor. Deseja fazer a compensação?",)))
+				funValida()
+			endif
+		endif
+	endif
+    if INCLUI == .F.  .and.  ALTERA == .F. 
+
+    	_cSQL := "SELECT COUNT(*) QTDE FROM "+RetSqlName("SE2")+" "
+		_cSQL += " WHERE E2_PREFIXO = 'PRO' "
+		_cSQL += " AND D_E_L_E_T_ = '*' "
+		_cSQL += " AND E2_FORNECE  = '"+cA100For+"' "
+		_cSQL += " AND E2_LOJA     = '"+cLoja+"' "
+		_cSQL += " AND E2_FILIAL   = '"+xFilial("SE2")+"' "
+		_cSQL += " AND E2_XPROVIS  = '"+cNFiscal+"' "
+
+		If Select("TMP") > 0
+			TMP->(dbCloseArea())
+		EndIf
+		dbUseArea( .T. ,"TOPCONN", TCGenQry(,,_cSQL), "TMP", .F. , .T. )
+
+	    if TMP->QTDE > 0
+	    		cQry := " UPDATE "+RetSqlName("SE2")+" SET D_E_L_E_T_ = '' "
+				cQry += " WHERE E2_PREFIXO = 'PRO' "
+				cQry += " AND D_E_L_E_T_ = '*' "
+				cQry += " AND E2_FORNECE  = '"+cA100For+"' "
+				cQry += " AND E2_LOJA     = '"+cLoja+"' "
+	   			cQry += " AND E2_FILIAL   = '"+xFilial("SE2")+"' "
+	   			cQry += " AND E2_XPROVIS  = '"+cNFiscal+"' "
+
+				If (TCSQLExec(cQry) < 0)
+			    	Return MsgStop("Erro ao ATUALIZAR DADOS DE FINANCEIRO! " + TCSQLError())
+				EndIf
+
+				cQry := " UPDATE "+RetSqlName("SZ1")+" SET Z1_STATUS = '1' "
+				cQry += " WHERE D_E_L_E_T_ <> '*'  "
+				cQry += "  AND Z1_FILIAL = '"+xFilial("SZ1")+"' "
+				cQry += "  AND Z1_CODIGO IN (  "
+				cQry += "  SELECT E2_NUM FROM SE2010  "
+				cQry += "  WHERE E2_XPROVIS = '"+cNFiscal+"' "
+				cQry += "   AND E2_FILIAL = '"+xFilial("SE2")+"' "
+				cQry += "   AND D_E_L_E_T_ <> '*')   "
+
+				If (TCSQLExec(cQry) < 0)
+			    	Return MsgStop("Erro ao ATUALIZAR DADOS DE FINANCEIRO! " + TCSQLError())
+				EndIf
+		endif
+    endif
+return .T. 
+
+
+static function funValida
+
+
+Private oButton1
+Private oButton2
+Private cxTipo := cTipo
+Static oDlg3
+
+  oDlg3 = MsDialog():New( 000, 000, 400, 800, "Provisões a Pagar",,,.F.,, 0, 16777215,,,.T.,, ,.F. )
+
+    fMSNewGe1()
+
+   	 oButton1 := TButton():New( 179, 348, "Salvar", oDlg3,{||  funSalvar()}, 037, 012,,,.F.,.T.,.F.,,.F.,,,.F. )
+     oButton2 := TButton():New( 179, 307, "Cancelar", oDlg3,{||  oDlg3:end()}, 037, 012,,,.F.,.T.,.F.,,.F.,,,.F. )
+
+  oDlg3:Activate( oDlg3:bLClicked, oDlg3:bMoved, oDlg3:bPainted,.T.,,,, oDlg3:bRClicked, )
+
+Return
+
+
+Static Function fMSNewGe1()
+
+Private nX
+Private aHeaderEx := {}
+Private aColsEx := {}
+Private aFieldFill := {}
+Private aFields := {"OK","E2_NUM","E2_PARCELA", "E2_EMISSAO", "E2_VENCREA","E2_VALOR"}
+Private aAlterFields := {"OK"}
+Static oMSNewGe3
+
+
+DbSelectArea("SX3")
+SX3->(DbSetOrder(2))
+For nX := 1 to Len(aFields)
+	If SX3->(DbSeek(aFields[nX]))
+
+		Aadd(aHeaderEx, {AllTrim(X3Titulo()),SX3->X3_CAMPO,SX3->X3_PICTURE,SX3->X3_TAMANHO,SX3->X3_DECIMAL,SX3->X3_VALID, SX3->X3_USADO,SX3->X3_TIPO,SX3->X3_F3,SX3->X3_CONTEXT,SX3->X3_CBOX,SX3->X3_RELACAO})
+	else
+		SX3->(DbSeek("OK"))
+
+		Aadd(aHeaderEx, {"Selec.","OK","@BMP",SX3->X3_TAMANHO,SX3->X3_DECIMAL,"AllwaysTrue()", SX3->X3_USADO,SX3->X3_TIPO,SX3->X3_F3,SX3->X3_CONTEXT,SX3->X3_CBOX,SX3->X3_RELACAO})
+	Endif
+next
+
+
+_cSQL := "SELECT E2_FILIAL, E2_NUM, E2_PARCELA, E2_EMISSAO, E2_VENCREA, E2_VALOR FROM "+RetSqlName("SE2")+" "
+_cSQL += " WHERE E2_PREFIXO = 'PRO' "
+_cSQL += " AND D_E_L_E_T_ <> '*' "
+_cSQL += " AND E2_SALDO > 0  "
+_cSQL += " AND E2_FORNECE = '"+cA100For+"' "
+_cSQL += " AND E2_LOJA    = '"+cLoja+"' "
+_cSQL += " AND E2_FILIAL  = '"+xFilial("SE2")+"' "
+
+_cSQL += " ORDER BY E2_NUM, E2_PARCELA "
+
+If Select("TMP") > 0
+	TMP->(dbCloseArea())
+EndIf
+dbUseArea( .T. ,"TOPCONN", TCGenQry(,,_cSQL), "TMP", .F. , .T. )
+
+
+While !TMP->(EOF())
+	Aadd(aFieldFill, {"LBOK", TMP->E2_NUM, TMP->E2_PARCELA, stod(TMP->E2_EMISSAO), stod(TMP->E2_VENCREA), TMP->E2_VALOR , .F.  } )
+	TMP->(dbskip())
+end
+
+if len(aFieldFill) == 0
+	Aadd(aFieldFill, {"LBOK", TMP->E2_NUM, TMP->E2_PARCELA, stod(TMP->E2_EMISSAO), stod(TMP->E2_VENCREA), TMP->E2_VALOR , .F.  } )
+endif
+
+if len(aFieldFill) == 0
+	For nX := 1 to Len(aFields)
+		If DbSeek(aFields[nX])
+			Aadd(aFieldFill, CriaVar(SX3->X3_CAMPO))
+		Endif
+	next
+endif
+
+
+aColsEx := aFieldFill
+
+  oMSNewGe3 := MsNewGetDados():New( 010, 005, 169, 388, 1+4+2, "AllwaysTrue", "AllwaysTrue", "+Field1+Field2", aAlterFields,, 999, "AllwaysTrue", "", "AllwaysTrue", oDlg3, aHeaderEx, aColsEx)
+  bSvblDblClick := oMSNewGe3:oBrowse:bLDblClick
+  oMSNewGe3:oBrowse:bLDblClick := {|| if(oMSNewGe3:oBrowse:nColPos<>1,GdRstDblClick(@oMSNewGe3,@bSvblDblClick),CLIQUE())}
+
+
+Return
+
+
+static function funSalvar
+
+
+	for nX := 1 to len(oMSNewGe3:aCols)
+		if oMSNewGe3:aCols[nX][1] == "LBOK"
+
+				aArray := {}
+
+				PRIVATE lMsErroAuto := .F. 
+
+				cQry := " UPDATE "+RetSqlName("SE2")+" SET E2_XPROVIS = '"+cNFiscal+"' "
+				cQry += " WHERE E2_FILIAL = '"+xFilial("SE2")+"'  "
+				cQry += "  AND E2_NUM     = '"+oMSNewGe3:ACOLS[nX][2]+"' "
+				cQry += "  AND E2_PARCELA = '"+oMSNewGe3:ACOLS[nX][3]+"' "
+				cQry += "  AND E2_FORNECE = '"+cA100For+"' "
+				cQry += "  AND E2_LOJA   = '"+cLoja+"' "
+				cQry += "  AND D_E_L_E_T_ <> '*' AND E2_PREFIXO = 'PRO' "
+
+				If (TCSQLExec(cQry) < 0)
+			    	Return MsgStop("Erro ao ATUALIZAR DADOS DE FINANCEIRO! " + TCSQLError())
+				EndIf
+
+
+
+				aArray := { { "E2_PREFIXO" , "PRO" 						, NIL }, { "E2_FILIAL"  , xFilial("SE2")				, NIL }, { "E2_NUM"     , oMSNewGe3:ACOLS[nX][2]     , NIL } }
+
+				MsExecAuto( { |x,y,z| FINA050(x,y,z)}, aArray,, 5)
+
+				If lMsErroAuto
+				    MostraErro()
+				    return
+				Endif
+
+				SZ1->(dbsetorder(1))
+				SZ1->(dbgotop())
+				if SZ1->(dbseek(xFilial("SZ1")+oMSNewGe3:ACOLS[nX][2]))
+					RecLock("SZ1", .F. )
+					SZ1->Z1_STATUS := "2"
+					SZ1->Z1_DTESTOR := ddatabase
+					SZ1->(MsUnlock())
+				endif
+
+		endif
+	next
+
+	oDlg3:end()
+
+return
+
+static Function CLIQUE()
+	if oMSNewGe3:ACOLS[oMSNewGe3:NAT][1] == "LBOK"
+		oMSNewGe3:ACOLS[oMSNewGe3:NAT][1] := "LBNO"
+	else
+		oMSNewGe3:ACOLS[oMSNewGe3:NAT][1] := "LBOK"
+	endif
+	oMSNewGe3:REFRESH()
+return

@@ -1,0 +1,12 @@
+#INCLUDE "PROTHEUS.CH"
+
+USER FUNCTION PCO310AUX()
+
+
+
+xTEste := 1
+xTEste := 1
+xTEste := 1
+
+
+RETURN

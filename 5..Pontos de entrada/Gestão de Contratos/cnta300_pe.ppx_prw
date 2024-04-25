@@ -1,0 +1,257 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "Protheus.ch"
+#line 2 "c:\totvs\projetos_prod\5..pontos de entrada\gestão de contratos\\c:/totvs/projetos_prod/5..pontos de entrada/gestão de contratos/cnta300_pe.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWMVCDef.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PARMTYPE.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PARMTYPECH.CH"
+#line 3 "PARMTYPE.CH"
+#line 2 "FWMVCDef.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWMBROWSE.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWBROWSE.CH"
+#line 3 "FWMBROWSE.CH"
+#line 4 "FWMVCDef.ch"
+#line 11 "c:\totvs\projetos_prod\5..pontos de entrada\gestão de contratos\\c:/totvs/projetos_prod/5..pontos de entrada/gestão de contratos/cnta300_pe.prw"
+Function U_CNTA300()
+	Local aParam     := PARAMIXB
+	Local xRet       := .T. 
+	Local oObj       := Nil
+	Local cIdPonto   := ""
+	Local cIdModel   := ""
+	Local nOper      := 0
+	Local nValor	 := 0
+	Local cTipo      := ""
+	Local cCodCtr	 := ""
+
+
+
+
+
+
+
+
+
+
+
+	Private cGrupo  := ""
+	Private nStart      := 0
+
+
+	If aParam <> NIL
+		FwLogMsg("CNTA300_PE", , "CNTA300_PE", FunName(), "","> "+aParam[2], 0, (nStart - Seconds()), {})
+
+		oObj     := aParam[1]
+		cIdPonto := aParam[2]
+		cIdModel := aParam[3]
+
+
+		If cIdPonto == "MODELVLDACTIVE"
+			nOper := oObj:nOperation
+
+
+			If nOper == 3
+				If FunName() == "MATA161"
+
+					CN9MASTER := oObj:GetModel( "CN9MASTER" ):GetStruct()
+					CN9MASTER:SetProperty( "CN9_CONDPG", 11, FwBuildFeature( 3, "SC8->C8_COND" ) )
+
+						cQry1 := " SELECT C1_CC,C1_ITEMCTA,C1_CLVL FROM " + RetSqlName("SC1")+ " SC1 WHERE C1_COTACAO = '"+SC8->C8_NUM+"' AND C1_FILIAL = '"+xFilial("SC1")+"' AND SC1.D_E_L_E_T_ != '*'  "
+						If SELECT("TRASC1") > 0
+							TRASC1->(DbCloseArea())
+						Endif
+						dbUseArea( .T. ,"TOPCONN", TcGenQry(,,cQry1),"TRASC1", .T. , .T. )
+						DbSelectArea("TRASC1")
+						TRASC1->(dbGoTop())
+
+
+						cGrupo:=GetNewPar("MV_GRUPOPX","AVB990")
+
+
+
+
+						CN9MASTER:SetProperty( "CN9_XAPROV", 11, FwBuildFeature( 3, If(cGrupo="AVB990", 'GetNewPar("MV_GRUPOPX","AVB990")', 'GetNewPar("MV_GRUPCPX","AVB991")') ) )
+
+				Endif
+
+
+			ElseIf nOper == 5
+
+			EndIf
+
+
+		ElseIf cIdPonto == "MODELPRE"
+
+
+		ElseIf cIdPonto == "FORMPRE"
+
+
+		ElseIf cIdPonto == "BUTTONBAR"
+			xRet := {}
+			aAdd(xRet, {"#Cotação", "", {|| u_MAT161AUX(CN9_NUMCOT,CN9_FILIAL)}, "Tooltip 1"})
+			aAdd(xRet, {"#Aprovadores", "", {|| U_MAAPROV(CN9_NUMERO,2,"CT")}, "Tooltip 1"})
+			aAdd(xRet, {"#Carregar Itens Revisão", "", {|| U_OZ69A001()}, "Tooltip 1"})
+
+
+		ElseIf cIdPonto == "FORMPOS"
+
+
+
+		ElseIf cIdPonto == "MODELPOS"
+
+
+
+		ElseIf cIdPonto == "FORMCOMMITTTSPRE"
+			If Empty(CN9->CN9_REVISA)
+				cChvSCR := CN9->CN9_FILIAL + "CT" + CN9->CN9_NUMERO
+			Else
+				cChvSCR := CN9->CN9_FILIAL + "RV" + CN9->CN9_NUMERO + CN9->CN9_REVISA
+			EndIf
+
+			aGetAre := GetArea()
+			aSCRAre := SCR->(GetArea())
+
+			dbSelectArea("SCR")
+			SCR->(dbSetOrder(01))
+			If SCR->(dbSeek(Alltrim(cChvSCR)))
+
+				while !SCR->(Eof()) .And. Alltrim(SCR->CR_FILIAL+SCR->CR_TIPO+SCR->CR_NUM)==Alltrim(cChvSCR)
+					dbSelectArea("SCR")
+					If SCR->(Reclock("SCR", .F. ))
+						SCR->CR_XDTINIC := CN9->CN9_DTINIC
+						SCR->CR_XREVISA := CN9->CN9_REVISA
+						SCR->CR_XDTFIM  := CN9->CN9_DTFIM
+						SCR->CR_XDTREV  := CN9->CN9_DTREV
+						SCR->CR_XSALDO  := CN9->CN9_SALDO
+						SCR->CR_XVLINI  := CN9->CN9_VLINI
+						SCR->CR_XVLATU  := CN9->CN9_VLATU
+						SCR->CR_XVLADIT := CN9->CN9_VLADIT
+						SCR->CR_XCODOBJ := Msmm(CN9->CN9_CODOBJ)
+						SCR->CR_XCODCLA := Msmm(CN9->CN9_CODCLA)
+						SCR->CR_XCODJUS	:= Msmm(CN9->CN9_CODJUS)
+						SCR->CR_XGLOBA	:= CN9->CN9_XGLOBA
+						SCR->(MsUnlock())
+					EndIf
+					SCR->(dbSkip())
+				EndDo
+			EndIf
+
+			RestArea(aSCRAre)
+			RestArea(aGetAre)
+
+
+		ElseIf cIdPonto == "FORMCOMMITTTSPOS"
+
+
+		ElseIf cIdPonto == "MODELCOMMITTTS"
+			If !(Alltrim(cIdPonto) $ ("FORMPRE|MODELPRE"))
+
+			EndIf
+
+
+		ElseIf cIdPonto == "MODELCOMMITNTTS"
+
+			If ! Empty(CN9->CN9_TIPREV)
+
+				cTipo  := "RV"
+				cCodCtr := CN9->CN9_NUMERO+CN9->CN9_REVISA
+
+				nValor := CN9->CN9_VLATU
+
+			Else
+				nValor := CN9->CN9_VLATU
+				cTipo  := "CT"
+				cCodCtr := Alltrim(CN9->CN9_NUMERO)
+			EndIf
+
+			If nValor == 0
+				nValor := 1
+			EndIf
+
+			If ! FWIsInCallStack("MATA094")
+
+				AVBUtil():DeletaGrupoAprovacao(CN9->CN9_FILIAL,cCodCtr,cTipo)
+				AVBUtil():TrocaGrupoAprovacao("CN9",CN9->CN9_NUMERO,Alltrim(CNB->CNB_CLVL),,nValor,,CN9->CN9_REVISA)
+			EndIf
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			nOper := oObj:nOperation
+			If !(Alltrim(cIdPonto) $ ("FORMPRE|MODELPRE"))
+
+			EndIf
+
+
+
+
+
+		EndIf
+	EndIf
+Return xRet

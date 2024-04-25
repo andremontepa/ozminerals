@@ -1,0 +1,16 @@
+#INCLUDE "PROTHEUS.CH"
+#INCLUDE "RWMAKE.CH"
+#INCLUDE "FWMVCDEF.CH"
+#INCLUDE "FWMBROWSE.CH"
+#INCLUDE "TBICONN.CH"
+#INCLUDE "TOPCONN.CH"
+#INCLUDE "FILEIO.CH"
+#INCLUDE "PRTOPDEF.CH"
+#INCLUDE "font.ch"
+user Function 3()
+      Engana()
+Return
+
+Static Function Engana()
+    CNTA120()
+Return

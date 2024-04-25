@@ -1,0 +1,34 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "Protheus.ch"
+#line 3 "c:\totvs\projetos_prod\5..pontos de entrada\financeiro\\c:/totvs/projetos_prod/5..pontos de entrada/financeiro/fa240pa.prw"
+
+
+Function U_FA240PA()
+
+Local lRet  := .T. 
+
+
+lRet :=  Iif(FindFunction("APMsgYesNo"), APMsgYesNo("Permite selecionar PA? ", "PONTO DE ENTRADA - FA240PA"), (cMsgYesNo:="MsgYesNo", &cMsgYesNo.("Permite selecionar PA? ", "PONTO DE ENTRADA - FA240PA")))
+
+Return lRet

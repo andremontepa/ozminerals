@@ -1,0 +1,359 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\rwmake.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\stdwin.ch"
+#line 14 "rwmake.ch"
+#line 2 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt120ok.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\fileio.ch"
+#line 3 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt120ok.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TbiConn.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Ap5Mail.ch"
+#line 10 "TbiConn.ch"
+#line 4 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt120ok.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TbiCode.ch"
+#line 5 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt120ok.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "protheus.ch"
+#line 20 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt120ok.prw"
+Function U_MT120OK()
+
+Local nPosPrd  := aScan(aHeader,{|x| AllTrim(x[2]) == "C7_PRODUTO"})
+Local nPosCC   := aScan(aHeader,{|x| AllTrim(x[2]) == "C7_CC"})
+Local nPosItc  := aScan(aHeader,{|x| AllTrim(x[2]) == "C7_ITEMCTA"})
+Local nPosClv  := aScan(aHeader,{|x| AllTrim(x[2]) == "C7_CLVL"})
+Local nPosCon  := aScan(aHeader,{|x| AllTrim(x[2]) == "C7_CONTA"})
+Local nPosTot  := aScan(aHeader,{|x| AllTrim(x[2]) == "C7_TOTAL"})
+
+Local nPosBloq := aScan(aHeader,{|x| AllTrim(x[2]) == "C7_XBLQSAL"})
+
+
+Local nUsado  := Len(aHeader)
+
+Local nX       := 0
+Local _lRet    := .T. 
+
+Local nValPed  := 0
+Local cProd    := ""
+Local cNumPed  := CA120NUM
+Local cAno     := Alltrim(Str(Year(Date())))
+Local _cCusto  := _cItemco := _cConta  := _cClvl := ""
+Local cTexto   := ""
+Local cMes     := Month2Str(Date())
+Local cCodUser := RetCodUsr()
+Local cNamUser := UsrRetName( cCodUser )
+Local nVlSaldo := 0
+Local nZw3Val  := 0
+Local aCab     := {}
+Local aInfor   := {}
+Local lRetWZ3  := .T. 
+Local oTabTemp	:= Nil
+
+
+
+
+
+
+
+
+Private aCampos:={ {"CHAV" ,"C", 38,0}, {"BLOQ" ,"C",1,0}, {"CCUSTO" ,"C",9,0}, {"ITEMCO" ,"C",9,0}, {"CLVL" ,"C",20,0}, {"CONTA" ,"C",20,0}, {"NVLTOT","N",14,2}, {"NVLCON","N",14,2}, {"CONTROLA" ,"C",1,0}}
+
+If Select("TRBGR")> 0
+	TRBGR->(DbCloseArea())
+Endif
+
+oTabTemp := FWTemporaryTable():New("TRBGR", aCampos)
+
+oTabTemp:Create()
+
+For nX :=1 To Len( aCols )
+	If ( !aCols[n][nUsado+1] )
+		cProd   := Alltrim(aCols[nX][nPosPrd])
+
+		aCols[nX][nPosBloq] := "N"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		cQuery := " SELECT SUM(ZW2_PREANO)-SUM(ZW2_VLANO) VLSALDO, ZW2_BLOQ FROM "+RetSqlName("ZW2")+" ZW2 "
+		cQuery += " WHERE ZW2_CCUSTO = '"+aCols[nX][nPosCC]+"' "
+		cQuery += " AND ZW2_ITEMCO = '"+aCols[nX][nPosItc]+"' "
+		cQuery += " AND ZW2_CLVL = '"+aCols[nX][nPosClv]+"' "
+		cQuery += " AND ZW2_CONTA = '"+aCols[nX][nPosCon]+"' "
+		cQuery += " AND ZW2_ANO = '"+cAno+"' "
+		cQuery += " AND ZW2_VLANO >= 0 "
+
+		cQuery += " AND ZW2.D_E_L_E_T_ != '*' "
+		cQuery += " GROUP BY ZW2_BLOQ "
+
+		If SELECT("TRA") > 0
+			("TRA")->(DbCloseArea())
+		Endif
+		dbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQuery),"TRA", .T. , .T. )
+
+
+						cQrybloq := " SELECT ZW2_BLOQ FROM "+RetSqlName("ZW2")+" ZW2 "
+						cQrybloq += " WHERE ZW2_CCUSTO = '"+aCols[nX][nPosCC]+"' "
+						cQrybloq += " AND ZW2_ITEMCO = '"+aCols[nX][nPosItc]+"' "
+						cQrybloq += " AND ZW2_CLVL = '"+aCols[nX][nPosClv]+"' "
+						cQrybloq += " AND ZW2_CONTA = '"+aCols[nX][nPosCon]+"' "
+						cQrybloq += " AND ZW2_ANO = '"+cAno+"' "
+						cQrybloq += " AND ZW2.D_E_L_E_T_ != '*' "
+
+						If SELECT("TRD") > 0
+							TRD->(DbCloseArea())
+						Endif
+						dbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQrybloq),"TRD", .T. , .T. )
+
+
+		If _cCusto+_cItemco+_cConta <> aCols[nX][nPosCC] + aCols[nX][nPosItc] + aCols[nX][nPosCon]
+			nValPed := 0
+			nValPed := aCols[nX][nPosTot]
+			_cCusto  := aCols[nX][nPosCC]
+			_cItemco := aCols[nX][nPosItc]
+			_cClvl   := aCols[nX][nPosClv]
+			_cConta  := aCols[nX][nPosCon]
+		Else
+			nValPed := nValPed + aCols[nX][nPosTot]
+		Endif
+		dbSelectArea("TRBGR")
+		cChave := aCols[nX][nPosCC] + aCols[nX][nPosItc] + aCols[nX][nPosClv] + aCols[nX][nPosCon]
+		nVlSaldo := TRA->VLSALDO
+		cControla := TRD->ZW2_BLOQ
+		TRBGR->(dbSeek(cChave))
+		IF EOF()
+			reclock("TRBGR", .T. )
+			TRBGR->CHAV       := cChave
+			TRBGR->NVLTOT     := nValPed
+			TRBGR->NVLCON     := nVlSaldo
+			TRBGR->CCUSTO     := aCols[nX][nPosCC]
+			TRBGR->ITEMCO     := aCols[nX][nPosItc]
+			TRBGR->CLVL       := aCols[nX][nPosClv]
+			TRBGR->CONTA      := aCols[nX][nPosCon]
+			TRBGR->CONTROLA	:= cControla
+		ELSE
+			reclock("TRBGR", .F. )
+			TRBGR->NVLTOT     := nValPed
+			TRBGR->NVLCON     := nVlSaldo
+		ENDIF
+	Endif
+next
+TRBGR->(DbGoTop())
+While TRBGR->(!EOF())
+	nVlPed  := TRBGR->NVLTOT
+	nVlCont := TRBGR->NVLCON
+	cControl := TRBGR->CONTROLA
+
+	DbSelectArea("ZW3")
+	ZW3->(DbSetOrder(3))
+	If ZW3->(DbSeek(xfilial("ZW3")+cNumPed+TRBGR->CCUSTO+TRBGR->ITEMCO+TRBGR->CLVL+TRBGR->CONTA+cAno))
+		If ZW3->ZW3_VALOR > TRBGR->NVLTOT
+			nVlZw3 := ZW3->ZW3_VALOR - TRBGR->NVLTOT
+			nVlCont := nVlCont + nVlZw3
+		Elseif ZW3->ZW3_VALOR < TRBGR->NVLTOT
+			nVlZw3 := TRBGR->NVLTOT - ZW3->ZW3_VALOR
+			nVlCont := nVlCont - nVlZw3
+		Else
+			lRetWZ3 := .F. 
+		Endif
+		lAlt := .T. 
+	Endif
+	If cControl = "S"
+		If lRetWZ3
+			nValTot := nVlCont - nVlPed
+			If nValTot < 0
+				_lRet := .F. 
+				reclock("TRBGR", .F. )
+				TRBGR->BLOQ := "B"
+			Endif
+		Endif
+	Endif
+	TRBGR->(Dbskip())
+Enddo
+If !_lRet
+	TRBGR->(DbGoTop())
+	While TRBGR->(!EOF())
+		If !Empty(TRBGR->BLOQ)
+			cTexto +="Saldo da conta insuficiente!"+chr(13)+chr(10)
+
+
+			cTexto +="Centro de Custo: "+Alltrim(SubStr(TRBGR->CHAV,1,9))+", Item: "+Alltrim(SubStr(TRBGR->CHAV,10,9))+" e Conta: "+Alltrim(SubStr(TRBGR->CHAV,19,20))+chr(13)+chr(10)+ "Valor Solicitado: "+Transform(TRBGR->NVLTOT,"@E 999,999,999.99")+chr(13)+chr(10)+ "Saldo conta     : "+Transform(TRBGR->NVLCON,"@E 999,999,999.99")+chr(13)+chr(10)+chr(13)+chr(10)
+
+			AADD(aInfor,Alltrim(TRBGR->CCUSTO))
+			AADD(aInfor,Alltrim(TRBGR->CCUSTO)+" / "+Alltrim(TRBGR->ITEMCO)+" / "+Alltrim(TRBGR->CLVL)+" / "+Alltrim(TRBGR->CONTA))
+			AADD(aInfor,TRBGR->NVLTOT)
+			AADD(aInfor,cNumPed)
+			AADD(aInfor,TRBGR->NVLCON)
+			AADD(aInfor,TRBGR->ITEMCO)
+
+			AADD(aCab,aInfor)
+		Endif
+		TRBGR->(Dbskip())
+	Enddo
+	cTexto +="O pedido n?o pode ser gerado pois n?o tenha saldo sufiente!"+chr(13)+chr(10)+"Obs: Deseja Enviar um E-mail para o Gestor do centro de custos?"
+
+	If IsBlind()
+		Return .F. 
+	Else
+		If Iif(FindFunction("APMsgYesNo"), APMsgYesNo(cTexto, "Atenš?o"), (cMsgYesNo:="MsgYesNo", &cMsgYesNo.(cTexto, "Atenš?o")))
+
+
+
+
+			u_Wf120ok(aCab)
+
+		Endif
+	Endif
+Else
+	TRBGR->(DbGoTop())
+	While TRBGR->(!EOF())
+		If TRBGR->BLOQ <> "B"
+
+			DbSelectArea("ZW3")
+			ZW3->(DbSetOrder(3))
+			If ZW3->(DbSeek(xfilial("ZW3")+cNumPed+TRBGR->CCUSTO+TRBGR->ITEMCO+TRBGR->CLVL+TRBGR->CONTA+cAno))
+				cQuery := " SELECT SUM(ZW3_VALOR) DEBITO, "
+				cQuery += " CREDITO = (SELECT SUM(ZW3_VALOR) FROM "+RetSqlName("ZW3")+" ZW3 WHERE ZW3_NUMPED = '"+cNumPed+"' "
+				cQuery += " AND ZW3_CCUSTO = '"+Alltrim(TRBGR->CCUSTO)+"' "
+				cQuery += " AND ZW3_ITEMCO = '"+Alltrim(TRBGR->ITEMCO)+"' "
+				cQuery += " AND ZW3_CLVL = '"+Alltrim(TRBGR->CLVL)+"' "
+				cQuery += " AND ZW3_CONTA = '"+Alltrim(TRBGR->CONTA)+"' "
+				cQuery += " AND ZW3_ANO = '"+cAno+"' "
+				cQuery += " AND ZW3_TIPO = 'C') "
+				cQuery += " FROM "+RetSqlName("ZW3")+" ZW3 "
+				cQuery += " WHERE ZW3_NUMPED = '"+cNumPed+"' "
+				cQuery += " AND ZW3_CCUSTO = '"+Alltrim(TRBGR->CCUSTO)+"' "
+				cQuery += " AND ZW3_ITEMCO = '"+Alltrim(TRBGR->ITEMCO)+"' "
+				cQuery += " AND ZW3_CLVL = '"+Alltrim(TRBGR->CLVL)+"' "
+				cQuery += " AND ZW3_CONTA = '"+Alltrim(TRBGR->CONTA)+"' "
+				cQuery += " AND ZW3_ANO = '"+cAno+"' "
+				cQuery += " AND ZW3_TIPO = 'D' "
+
+				If SELECT("TRC") > 0
+					("TRC")->(DbCloseArea())
+				Endif
+				dbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQuery),"TRC", .T. , .T. )
+				nZw3Val := TRC->DEBITO - TRC->CREDITO
+				If nZw3Val > TRBGR->NVLTOT
+					nVlZw3 := nZw3Val - TRBGR->NVLTOT
+					cOpera := "-"
+					cDebCred := "C"
+				Elseif nZw3Val < TRBGR->NVLTOT
+					nVlZw3 := TRBGR->NVLTOT - nZw3Val
+					cOpera := "+"
+					cDebCred := "D"
+				Else
+					nVlZw3 := 0
+				Endif
+				If nVlZw3 > 0
+					cUpdate:= " UPDATE " + RetSqlName("ZW2")+" SET ZW2_VAL"+cMes+"=ZW2_VAL"+cMes+cOpera+Alltrim(Str(nVlZw3))+" ,ZW2_VLANO=ZW2_VLANO"+cOpera+Alltrim(Str(nVlZw3))
+					cUpdate+= " WHERE ZW2_CCUSTO = '"+Alltrim(TRBGR->CCUSTO)+"' "
+					cUpdate+= " AND ZW2_ITEMCO = '"+Alltrim(TRBGR->ITEMCO)+"' "
+					cUpdate+= " AND ZW2_CLVL = '"+Alltrim(TRBGR->CLVL)+"' "
+					cUpdate+= " AND ZW2_CONTA = '"+Alltrim(TRBGR->CONTA)+"' "
+					cUpdate+= " AND ZW2_ANO = '"+cAno+"' "
+					cUpdate+= " AND ZW2_FILIAL = '"+xFilial("ZW2")+"' "
+					cUpdate+= " AND D_E_L_E_T_ != '*' "
+					nFlag := TcSqlExec(cUpdate)
+
+					RecLock("ZW3", .T. )
+					ZW3->ZW3_FILIAL := XFILIAL("ZW3")
+					ZW3->ZW3_NUM    := GETSX8NUM("ZW3","ZW3_NUM")
+					ZW3->ZW3_TIPO   := cDebCred
+					ZW3->ZW3_CCUSTO := TRBGR->CCUSTO
+					ZW3->ZW3_ITEMCO := TRBGR->ITEMCO
+					ZW3->ZW3_ANO    := cAno
+					ZW3->ZW3_CLVL   := TRBGR->CLVL
+					ZW3->ZW3_CONTA  := TRBGR->CONTA
+					ZW3->ZW3_DATA   := Date()
+					ZW3->ZW3_VALOR  := nVlZw3
+					ZW3->ZW3_ORIGEM := "Pedido de compra"
+					ZW3->ZW3_USUARI := cNamUser
+					ZW3->ZW3_NUMPED := cNumPed
+					ZW3->ZW3_HISTOR := "Valor ref. alteraš?o do pedido: "+cNumPed
+					ZW3->(MsUnLock())
+					ConfirmSX8()
+				Endif
+			Else
+				nVlpTot := TRBGR->NVLTOT
+				cUpdate:= " UPDATE " + RetSqlName("ZW2")+" SET ZW2_VAL"+cMes+"=ZW2_VAL"+cMes+"+"+Alltrim(Str(nVlpTot))+" ,ZW2_VLANO = ZW2_VLANO+"+Alltrim(Str(nVlpTot))
+				cUpdate+= " WHERE ZW2_CCUSTO = '"+Alltrim(TRBGR->CCUSTO)+"' "
+				cUpdate+= " AND ZW2_ITEMCO = '"+Alltrim(TRBGR->ITEMCO)+"' "
+				cUpdate+= " AND ZW2_CLVL = '"+Alltrim(TRBGR->CLVL)+"' "
+				cUpdate+= " AND ZW2_CONTA = '"+Alltrim(TRBGR->CONTA)+"' "
+				cUpdate+= " AND ZW2_ANO = '"+cAno+"' "
+			   	cUpdate+= " AND ZW2_FILIAL = '"+xFilial("ZW2")+"' "
+				cUpdate+= " AND D_E_L_E_T_ != '*' "
+				nFlag := TcSqlExec(cUpdate)
+
+				DbSelectArea("ZW3")
+				ZW3->(DbSetOrder(2))
+				RecLock("ZW3", .T. )
+				ZW3->ZW3_FILIAL := XFILIAL("ZW3")
+				ZW3->ZW3_NUM    := GETSX8NUM("ZW3","ZW3_NUM")
+				ZW3->ZW3_TIPO   := "D"
+				ZW3->ZW3_CCUSTO := TRBGR->CCUSTO
+				ZW3->ZW3_ITEMCO := TRBGR->ITEMCO
+				ZW3->ZW3_ANO    := cAno
+				ZW3->ZW3_CLVL  := TRBGR->CLVL
+				ZW3->ZW3_CONTA  := TRBGR->CONTA
+				ZW3->ZW3_DATA   := Date()
+				ZW3->ZW3_VALOR  := TRBGR->NVLTOT
+				ZW3->ZW3_ORIGEM := "Pedido de compra"
+				ZW3->ZW3_USUARI := cNamUser
+				ZW3->ZW3_NUMPED := cNumPed
+				ZW3->ZW3_HISTOR := "Valor ref. pedido: "+cNumPed
+				ZW3->(MsUnLock())
+				ConfirmSX8()
+			Endif
+		Endif
+		TRBGR->(Dbskip())
+	Enddo
+Endif
+
+oTabTemp:Delete()
+Return(_lRet)

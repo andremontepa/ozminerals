@@ -1,0 +1,343 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Rwmake.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\stdwin.ch"
+#line 14 "Rwmake.ch"
+#line 2 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt103fim.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "Protheus.ch"
+#line 3 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt103fim.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Topconn.ch"
+#line 5 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt103fim.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\fileio.ch"
+#line 6 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt103fim.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TbiConn.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Ap5Mail.ch"
+#line 10 "TbiConn.ch"
+#line 7 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt103fim.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TbiCode.ch"
+#line 21 "c:\totvs\projetos_prod\5..pontos de entrada\controle orcamentario\\c:/totvs/projetos_prod/5..pontos de entrada/controle orcamentario/mt103fim.prw"
+Function U_MT103FIM()
+	Local nOpcao := PARAMIXB[1]
+	Local nConfirma := PARAMIXB[2]
+	Local cAno     := Alltrim(Str(Year(Date())))
+
+	Local cMes     := Month2Str(Date())
+	Local nVlRel   := 0
+	Local _n       := 0
+	Local _nFim    := 7
+	Local aGetAre := GetArea()
+	Local aZB1Are := ZB1->(GetArea())
+
+
+
+
+
+
+	Private aCampos:={ {"CHAV" ,"C", 38,0}, {"CCUSTO" ,"C",9,0}, {"ITEMCO" ,"C",9,0}, {"CLVL" ,"C",20,0}, {"CONTA" ,"C",20,0}, {"NVLTOT","N",14,2}}
+
+	If Select("TRB")> 0
+		TRB->(DbCloseArea())
+	Endif
+	cNomeArq :=CriaTrab(aCampos)
+	dbUseArea(.T.,,cNomeArq , "TRB" , if(.F. .or. .T., !.T., NIL),.F. )
+	IndRegua("TRB",cNomeArq,"CHAV",,,"Selecionando Registros...")
+	if nConfirma == 1 .and.  nOpcao == 3 .or.  nOpcao == 4
+
+
+
+
+
+
+	cQuery := " SELECT D1_CC,D1_ITEMCTA,D1_CLVL,D1_CONTA,D1_TOTAL "
+	cQuery += " FROM "+RetSqlName("SD1")+" SD1 "
+	cQuery += " WHERE D1_FILIAL = '"+XFILIAL("SD1")+"' "
+	cQuery += " AND D1_PEDIDO = '"+SD1->D1_PEDIDO+"' "
+	cQuery += " AND D1_DOC = '"+SD1->D1_DOC+"' "
+	cQuery += " AND SD1.D_E_L_E_T_ = ' ' "
+
+	If SELECT("TRA") > 0
+		("TRA")->(DbCloseArea())
+	Endif
+	dbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQuery),"TRA", .T. , .T. )
+	dbSelectArea("TRB")
+	While TRA->(!EOF())
+		cChave := TRA->D1_CC+TRA->D1_ITEMCTA+TRA->D1_CLVL+TRA->D1_CONTA
+		TRB->(dbSeek(cChave))
+		IF EOF()
+			nVlRel := TRA->D1_TOTAL
+			reclock("TRB", .T. )
+			TRB->CHAV       := TRA->D1_CC+TRA->D1_ITEMCTA+TRA->D1_CLVL+TRA->D1_CONTA
+			TRB->NVLTOT     := nVlRel
+			TRB->CCUSTO     := TRA->D1_CC
+			TRB->ITEMCO     := TRA->D1_ITEMCTA
+			TRB->CLVL       := TRA->D1_CLVL
+			TRB->CONTA      := TRA->D1_CONTA
+		ELSE
+			nVlRel := TRB->NVLTOT + TRA->D1_TOTAL
+			reclock("TRB", .F. )
+			TRB->NVLTOT     := nVlRel
+		ENDIF
+		TRA->(DbSkip())
+	Enddo
+
+	TRB->(DbGoTop())
+	While TRB->(!EOF())
+		cUpdate:= " UPDATE " + RetSqlName("ZW2")+" SET ZW2_REL"+cMes+"=ZW2_REL"+cMes+"+"+Alltrim(Str(TRB->NVLTOT))+",ZW2_RELANO = ZW2_RELANO+"+Alltrim(Str(TRB->NVLTOT))
+		cUpdate+= " WHERE ZW2_CCUSTO = '"+Alltrim(TRB->CCUSTO)+"' "
+		cUpdate+= " AND ZW2_ITEMCO = '"+Alltrim(TRB->ITEMCO)+"' "
+		cUpdate+= " AND ZW2_CLVL = '"+Alltrim(TRB->CLVL)+"' "
+		cUpdate+= " AND ZW2_CONTA = '"+Alltrim(TRB->CONTA)+"' "
+		cUpdate+= " AND ZW2_ANO = '"+cAno+"' "
+		cUpdate+= " AND ZW2_FILIAL = '"+xFilial("ZW2")+"' "
+		cUpdate+= " AND D_E_L_E_T_ = ' ' "
+		nFlag := TcSqlExec(cUpdate)
+		TRB->(DbSkip())
+	Enddo
+
+
+   cQuery:="SELECT E2_VENCTO,E2_VENCREA,E2_FILIAL,E2_NUM,E2_PREFIXO,E2_FORNECE,E2_LOJA,E2_PARCELA,E2_TIPO "
+   cQuery+="FROM " + RetSqlName("SE2")+" SE2 "
+   cQuery+="WHERE E2_FILIAL = '" + SF1->F1_FILIAL + "' "
+   cQuery+="AND E2_NUM = '" + SF1->F1_DOC + "' "
+   cQuery+="AND E2_PREFIXO = '" + SF1->F1_SERIE + "' "
+   cQuery+="AND E2_FORNECE = '" + SF1->F1_FORNECE + "' "
+   cQuery+="AND E2_LOJA = '" + SF1->F1_LOJA + "' "
+   cQuery+="AND SE2.D_E_L_E_T_ = ' ' "
+   If SELECT("SE2TB") > 0
+      SE2TB->(DbCloseArea())
+   Endif
+
+   ChangeQuery(cQuery)
+   dbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQuery),"SE2TB", .T. , .T. )
+
+	dbSelectArea("SE2")
+   	SE2->(dbSetOrder(06))
+   	while SE2TB->(!Eof())
+		_dData := stod(SE2TB->E2_VENCREA)
+		LogMsg("MT103FIM", 9999, 6, 1, "", "", "Vencimento original: "+SE2TB->E2_VENCREA)
+		_nRet  := Dow(_dData)
+		LogMsg("MT103FIM", 9999, 6, 1, "", "", "Dia da semana original: "+Str(_nRet))
+	   	If !Alltrim(Str(_nRet)) $ "3#5"
+
+
+
+		   	for _n := 1 to _nFim
+
+				If Alltrim(Str(_nRet)) == "2"
+					_dData := DaySub(_dData, 4)
+				Else
+					_dData := DaySub(_dData, 1)
+				EndIf
+				_nRet := Dow(_dData)
+				LogMsg("MT103FIM", 9999, 6, 1, "", "", "Novo dia de vencimento: "+Str(_nRet))
+				If Alltrim(Str(_nRet)) $ "3#5"
+					If SE2->(dbSeek(SE2TB->E2_FILIAL + SE2TB->E2_FORNECE + SE2TB->E2_LOJA + SE2TB->E2_PREFIXO + SE2TB->E2_NUM + SE2TB->E2_PARCELA + SE2TB->E2_TIPO ))
+						LogMsg("MT103FIM", 9999, 6, 1, "", "", "Alterando titulo : "+SE2TB->E2_NUM)
+						SE2->(RecLock("SE2", .F. ))
+						SE2->E2_VENCTO := _dData
+						SE2->E2_VENCREA := _dData
+						SE2->(MsUnlock())
+						Exit
+					EndIf
+				Endif
+			next
+		Endif
+		SE2TB->(dbSkip())
+   	EndDo
+Endif
+if nConfirma == 1 .and.  nOpcao == 5
+
+
+
+
+
+
+	cQuery := " SELECT D1_CC,D1_ITEMCTA,D1_CLVL,D1_CONTA,D1_TOTAL "
+	cQuery += " FROM "+RetSqlName("SD1")+" SD1 "
+	cQuery += " WHERE D1_FILIAL = '"+XFILIAL("SD1")+"' "
+	cQuery += " AND D1_PEDIDO = '"+SD1->D1_PEDIDO+"' "
+	cQuery += " AND D1_DOC = '"+SD1->D1_DOC+"' "
+
+	If SELECT("TRA") > 0
+		("TRA")->(DbCloseArea())
+	Endif
+	dbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQuery),"TRA", .T. , .T. )
+	dbSelectArea("TRB")
+	While TRA->(!EOF())
+		cChave := TRA->D1_CC+TRA->D1_ITEMCTA+TRA->D1_CLVL+TRA->D1_CONTA
+		TRB->(dbSeek(cChave))
+		IF EOF()
+			nVlRel := TRA->D1_TOTAL
+			reclock("TRB", .T. )
+			TRB->CHAV       := TRA->D1_CC+TRA->D1_ITEMCTA+TRA->D1_CLVL+TRA->D1_CONTA
+			TRB->NVLTOT     := nVlRel
+			TRB->CCUSTO     := TRA->D1_CC
+			TRB->ITEMCO     := TRA->D1_ITEMCTA
+			TRB->CLVL       := TRA->D1_CLVL
+			TRB->CONTA      := TRA->D1_CONTA
+		ELSE
+			nVlRel := TRB->NVLTOT + TRA->D1_TOTAL
+			reclock("TRB", .F. )
+			TRB->NVLTOT     := nVlRel
+		ENDIF
+		TRA->(DbSkip())
+	Enddo
+
+	TRB->(DbGoTop())
+	While TRB->(!EOF())
+		cUpdate:= " UPDATE " + RetSqlName("ZW2")+" SET ZW2_REL"+cMes+"=ZW2_REL"+cMes+"-"+Alltrim(Str(TRB->NVLTOT))+", ZW2_RELANO = ZW2_RELANO-"+Alltrim(Str(TRB->NVLTOT))
+		cUpdate+= " WHERE ZW2_CCUSTO = '"+Alltrim(TRB->CCUSTO)+"' "
+		cUpdate+= " AND ZW2_ITEMCO = '"+Alltrim(TRB->ITEMCO)+"' "
+		cUpdate+= " AND ZW2_CLVL = '"+Alltrim(TRB->CLVL)+"' "
+		cUpdate+= " AND ZW2_CONTA = '"+Alltrim(TRB->CONTA)+"' "
+		cUpdate+= " AND ZW2_ANO = '"+cAno+"' "
+		cUpdate+= " AND ZW2_FILIAL = '"+xFilial("ZW2")+"' "
+		cUpdate+= " AND D_E_L_E_T_ = ' ' "
+		nFlag := TcSqlExec(cUpdate)
+		TRB->(DbSkip())
+	Enddo
+
+Endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+If Empty(SD1->D1_PEDIDO)
+   if nConfirma == 1 .and.  nOpcao == 3
+      fControlTitu()
+   Endif
+else
+   dbSelectArea("SE2")
+   SE2->(dbSetOrder(06))
+   If SE2->(dbSeek(xFilial("SE2") + SF1->F1_FORNECE + SF1->F1_LOJA + SF1->F1_SERIE + SF1->F1_DOC))
+      If SE2->(RecLock("SE2", .F. ))
+         SE2->E2_DATALIB := dDataBase
+         SE2->(MsUnlock())
+      EndIf
+   EndIf
+Endif
+
+RestArea(aZB1Are)
+RestArea(aGetAre)
+Return
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Static Function fControlTitu()
+
+
+	cGrupoAp := GETMV("MV_XNFAPRO")
+	cQuery:="SELECT AL_USER,AL_NIVEL,AL_COD "
+	cQuery+="FROM "+RetSqlName("SAL")+" SAL "
+	cQuery+="WHERE AL_FILIAL='"+xFilial("SAL")+"'"
+	cQuery+="AND AL_COD = '" + cGrupoAp + "' "
+	cQuery+="AND SAL.D_E_L_E_T_ = ' ' "
+	If SELECT("SALTB") > 0
+		SALTB->(DbCloseArea())
+	Endif
+	ChangeQuery(cQuery)
+	dbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQuery),"SALTB", .T. , .T. )
+
+	DbSelectArea("SZC")
+	SZC->(DbSetOrder(1))
+	while SALTB->(!Eof())
+		RecLock("SZC", .T. )
+		SZC->ZC_FILIAL   := XFILIAL("SZC")
+		SZC->ZC_PREFIXO  := SE2->E2_PREFIXO
+		SZC->ZC_NUM      := SE2->E2_NUM
+		SZC->ZC_PARCELA  := SE2->E2_PARCELA
+		SZC->ZC_TIPO     := SE2->E2_TIPO
+		SZC->ZC_FORNECE  := SE2->E2_FORNECE
+		SZC->ZC_LOJA     := SE2->E2_LOJA
+		SZC->ZC_APROVA   := SALTB->AL_USER
+		SZC->ZC_GRUPO    := SALTB->AL_COD
+		SZC->ZC_NIVEL    := SALTB->AL_NIVEL
+		SZC->(MsUnLock())
+		SALTB->(dbSkip())
+	EndDo
+
+
+	dbSelectArea("SE2")
+	SE2->(dbSetOrder(06))
+	If SE2->(dbSeek(xFilial("SE2") + SF1->F1_FORNECE + SF1->F1_LOJA + SF1->F1_SERIE + SF1->F1_DOC))
+		u_WF050INC( , , SE2->E2_PREFIXO,SE2->E2_NUM,SE2->E2_PARCELA,SE2->E2_TIPO,SE2->E2_FORNECE,SE2->E2_LOJA )
+	Endif
+
+	cUpdate := "UPDATE " + RetSqlName("SE2") + " SET E2_DATALIB = '" + DTOS(date()) + "' "
+	cUpdate += "WHERE E2_FILIAL = '" + SE2->E2_FILIAL + "' "
+	cUpdate += "AND E2_PREFIXO = '" + SE2->E2_PREFIXO + "' "
+	cUpdate += "AND E2_NUM = '" + SE2->E2_NUM + "' "
+	cUpdate += "AND E2_TIPO IN ('TX','INS','ISS') "
+
+
+	cUpdate += "AND D_E_L_E_T_ = ' ' "
+	nFlag := TcSqlExec(cUpdate)
+Return nil

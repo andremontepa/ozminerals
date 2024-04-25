@@ -1,0 +1,159 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TOTVS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "protheus.ch"
+#line 11 "c:\totvs\projetos_prod\5..pontos de entrada\ativo fixo\\c:/totvs/projetos_prod/5..pontos de entrada/ativo fixo/oz01m001.prw"
+
+	Function U_OZ01M001()
+
+
+    Local lConfirm 	:= .F. 
+
+    While .T. 
+		If GetPerg()
+			lConfirm := .T. 
+			Exit
+		Else
+			If Iif(FindFunction("APMsgNoYes"), APMsgNoYes("Foi detectado o cancelamento do preechimento dos parametros. Deseja realmente sair da Importação dos Dados (Sim / Não)?", "Atenção !!!"), (cMsgNoYes:="MsgNoYes", &cMsgNoYes.("Foi detectado o cancelamento do preechimento dos parametros. Deseja realmente sair da Importação dos Dados (Sim / Não)?", "Atenção !!!")))
+				Return Nil
+			EndIf
+		EndIf
+	End
+	If lConfirm
+		FWMsgRun(,{|oSay| ValidaReg(oSay)},"Verificando Integridade dos Dados. ","Gravando dados Validados ...")
+	EndIf
+Return Nil
+
+
+
+
+
+
+
+
+
+
+	Static Function ValidaReg(oSay)
+
+
+    Local oFile     := Nil
+    Local aDados    := {}
+    Local nX        := 0
+    Local nY        := 0
+    Local aCampos   := {}
+    Local aLinha    := {}
+    Local aRegFim   := {}
+    Local aRegAux   := {}
+    Local xValor    := Nil
+    Local aField    := {}
+    Local cTab      := Alltrim(Upper(MV_PAR01))
+    Local xVlAux    := Nil
+
+    If ! (Alltrim(Upper(MV_PAR01)) $ "SN1/SN3")
+        Iif(FindFunction("APMsgStop"), APMsgStop("A Tabela "+Alltrim(Upper(MV_PAR01))+", não está implementada para importação, Tabelas disponiveis (SN1|SN3). Não é possivel prosseguir.", "Atenção"), MsgStop("A Tabela "+Alltrim(Upper(MV_PAR01))+", não está implementada para importação, Tabelas disponiveis (SN1|SN3). Não é possivel prosseguir.", "Atenção"))
+        Return Nil
+    EndIf
+
+    DbSelectArea(cTab)
+
+    oFile := FWFileReader():New(Alltrim(MV_PAR02))
+    If oFile:Open()
+        aDados  := oFile:GetAllLines()
+        aCampos := StrTokArr(aDados[1],";")
+
+        If SubStr(aCampos[1],1,2) <> SubStr(Alltrim(Upper(MV_PAR01)),2,2)
+            Iif(FindFunction("APMsgStop"), APMsgStop("O Arquivo selecionado nao faz referencia com a tabela selecionada, não é possivel prosseguir.", "Atenção"), MsgStop("O Arquivo selecionado nao faz referencia com a tabela selecionada, não é possivel prosseguir.", "Atenção"))
+            Return Nil
+        EndIf
+
+        For nX := 1 To Len(aCampos)
+            aField := FWSX3Util():GetFieldStruct(Alltrim(aCampos[nX]))
+            If Len(aField) <= 0
+                Iif(FindFunction("APMsgStop"), APMsgStop("O campo "+aCampos[nX]+" não faz parte do dicionario de dados, não é possivel prosseguir.", "Atenção"), MsgStop("O campo "+aCampos[nX]+" não faz parte do dicionario de dados, não é possivel prosseguir.", "Atenção"))
+                Return Nil
+            EndIf
+        next
+
+        For nX := 2 To Len(aDados)
+            aLinha := StrTokArr2(aDados[nX],";", .T. )
+            For nY := 1 To Len(aLinha)
+                If FWSX3Util():GetFieldType(aCampos[nY]) == "C"
+                    xValor := Alltrim(aLinha[nY])
+                ElseIf FWSX3Util():GetFieldType(aCampos[nY]) == "L"
+                    xValor := .T. 
+                ElseIf FWSX3Util():GetFieldType(aCampos[nY]) == "D"
+                    xValor := Stod(aLinha[nY])
+                ElseIf FWSX3Util():GetFieldType(aCampos[nY]) == "M"
+                    xValor := Alltrim(aLinha[nY])
+                ElseIf FWSX3Util():GetFieldType(aCampos[nY]) == "N"
+                    xVlAux := StrTran(aLinha[nY],",",".")
+                    xValor := Val(xVlAux)
+                EndIf
+                aadd(aRegAux,{aCampos[nY],xValor})
+            next
+            aadd(aRegFim,aRegAux)
+            aRegAux := {}
+        next
+
+        oSay:cCaption := "Gravando dados Validados ..."
+
+        For nX := 1 To Len(aRegFim)
+            RecLock(cTab, .T. )
+                For nY := 1 To Len(aRegFim[nX])
+                    &(cTab+"->"+aRegFim[nX][nY][1]) := aRegFim[nX][nY][2]
+                next
+            If cTab == "SN1"
+                SN1->(MsUnlock())
+            ElseIf cTab == "SN3"
+                SN3->(MsUnlock())
+            EndIf
+        next
+        oFile:Close()
+    EndIf
+    Iif(FindFunction("APMsgInfo"), APMsgInfo("Importação realizada com sucesso.", "Atenção"), MsgInfo("Importação realizada com sucesso.", "Atenção"))
+Return Nil
+
+
+
+
+
+
+
+
+
+
+
+	Static Function GetPerg()
+
+
+    Local aPergs	    := {}
+    Local aRet		    := {}
+    Local lRet		    := .T. 
+
+    aadd(aPergs,{1,"Tabela"	         , Space(3)	   , "" , "" , "" , "" , 50	, .T.  } )
+    aadd(aPergs,{6,"Local do Arquivo", Padr("",300),"",".T.","",80, .T. ,"","",48+00})
+
+	If ! ParamBox(aPergs,"Parametros",aRet,,, .T. ,,,,"OZ01M001", .T. , .T. )
+		lRet := .F. 
+	EndIf
+Return lRet

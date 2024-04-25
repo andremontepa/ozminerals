@@ -1,0 +1,162 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\rwmake.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\stdwin.ch"
+#line 14 "rwmake.ch"
+#line 2 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/enviemail.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TbiConn.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Ap5Mail.ch"
+#line 10 "TbiConn.ch"
+#line 3 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/enviemail.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TbiCode.ch"
+#line 4 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/enviemail.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "protheus.ch"
+#line 5 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/enviemail.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\topconn.ch"
+#line 21 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/enviemail.prw"
+Function U_EnviEmail(_carq,cTitulo,cSubject,cBody,lShedule,cTo,cCC)
+
+LOCAL cServer, cAccount, cPassword, lAutentica, cUserAut, cPassAut
+LOCAL cUser,lMens:= .T. ,nOp:=0
+Local oDlg
+
+Private nStart      := 0
+
+cTitulo := If( cTitulo == nil, "", cTitulo ) ;
+cSubject := If( cSubject == nil, "", cSubject ) ;
+cBody := If( cBody == nil, "", cBody ) ;
+lShedule := If( lShedule == nil, .F. , lShedule ) ;
+cTo := If( cTo == nil, "erp@avancoresources.com.br", cTo ) ;
+cCc := If( cCc == nil, "erp@avancoresources.com.br", cCc ) ;
+
+If Empty(_carq)
+	cAttachment:=""
+Else
+	cAttachment:=_carq
+Endif
+
+IF EMPTY((cServer:=AllTrim(GetNewPar("MV_RELSERV",""))))
+	IF !lShedule
+		Iif(FindFunction("APMsgInfo"), APMsgInfo("Nome do Servidor de Envio de E-mail nao definido no 'MV_RELSERV'",), MsgInfo("Nome do Servidor de Envio de E-mail nao definido no 'MV_RELSERV'",))
+	ELSE
+		FwLogMsg("EnviEmail", , "EnviEmail", FunName(), "","Nome do Servidor de Envio de E-mail nao definido no 'MV_RELSERV'", 0, (nStart - Seconds()), {})
+	ENDIF
+	RETURN .F. 
+ENDIF
+
+IF EMPTY((cAccount:=AllTrim(GetNewPar("MV_RELACNT",""))))
+	IF !lShedule
+		Iif(FindFunction("APMsgInfo"), APMsgInfo("Conta para acesso ao Servidor de E-mail nao definida no 'MV_RELACNT'",), MsgInfo("Conta para acesso ao Servidor de E-mail nao definida no 'MV_RELACNT'",))
+	ELSE
+		FwLogMsg("EnviEmail", , "EnviEmail", FunName(), "","Conta para acesso ao Servidor de E-mail nao definida no 'MV_RELACNT'", 0, (nStart - Seconds()), {})
+	ENDIF
+	RETURN .F. 
+ENDIF
+
+IF lShedule .AND.  EMPTY(cTo)
+	IF !lShedule
+		FwLogMsg("EnviEmail", , "EnviEmail", FunName(), "","E-mail para envio, nao informado.", 0, (nStart - Seconds()), {})
+	ENDIF
+	RETURN .F. 
+ENDIF
+
+IF ! lShedule
+	cFrom:= UsrRetMail(RetCodUsr())
+	cUser:= UsrRetName(RetCodUsr())
+else
+	cFrom:= AllTrim(GetMv("MV_RELACNT",,""))
+	cUser:= AllTrim(GetMv("MV_RELAUSR",,""))
+endif
+cCC  := cCC
+cTo  := cTo
+cSubject:=cSubject+SPACE(100)
+
+IF EMPTY(cFrom)
+	IF !lShedule
+		Iif(FindFunction("APMsgInfo"), APMsgInfo("E-mail do remetente nao definido no cad. do usuario: "+cUser,), MsgInfo("E-mail do remetente nao definido no cad. do usuario: "+cUser,))
+	ELSE
+		FwLogMsg("EnviEmail", , "EnviEmail", FunName(), "","E-mail do remetente nao definido no cad. do usuario: "+cUser, 0, (nStart - Seconds()), {})
+	ENDIF
+	RETURN .F. 
+ENDIF
+cPassword := AllTrim(GetNewPar("MV_RELPSW"," "))
+lAutentica:= GetMv("MV_RELAUTH",, .F. )
+cUserAut  := Alltrim(GetMv("MV_RELAUSR",," "))
+cPassAut  := Alltrim(GetMv("MV_RELAPSW",," "))
+
+
+If (.F. );lOK:=CallProc( "MailSmtpOn", cServer, cAccount, cPassword,,, ); Else;lOK:=MailSmtpOn( cServer, cAccount, cPassword,,, ); endif
+
+If !lOK
+	IF !lShedule
+		Iif(FindFunction("APMsgInfo"), APMsgInfo("Falha na Conex?o com Servidor de E-Mail",), MsgInfo("Falha na Conex?o com Servidor de E-Mail",))
+	ELSE
+		FwLogMsg("EnviEmail", , "EnviEmail", FunName(), "","Falha na Conex?o com Servidor de E-Mail", 0, (nStart - Seconds()), {})
+	ENDIF
+ELSE
+	If lAutentica
+		If !MailAuth(cUserAut,cPassAut)
+			Iif(FindFunction("APMsgInfo"), APMsgInfo("Falha na Autenticacao do Usuario",), MsgInfo("Falha na Autenticacao do Usuario",))
+			If (.F. );lOk:=CallProc( "MailSmtpOff" ); Else;lOk:=MailSmtpOff(); endif
+		EndIf
+	EndIf
+
+
+
+
+
+			IF !EMPTY(cCC)
+				If (.F. );lOK:=CallProc( "MailSend", cFrom, { cTo }, { cCC }, { }, cSubject, cBody, { cAttachment },.F.,, ); Else;lOK:=MailSend( cFrom, { cTo }, { cCC }, { }, cSubject, cBody, { cAttachment },.F.,, ); endif
+			ELSE
+				If (.F. );lOK:=CallProc( "MailSend", cFrom, { cTo }, { }, { }, cSubject, cBody, { cAttachment },.F.,, ); Else;lOK:=MailSend( cFrom, { cTo }, { }, { }, cSubject, cBody, { cAttachment },.F.,, ); endif
+			ENDIF
+
+	If !lOK
+		IF !lShedule
+			Iif(FindFunction("APMsgInfo"), APMsgInfo("Falha no Envio do E-Mail: "+ALLTRIM(cTo),), MsgInfo("Falha no Envio do E-Mail: "+ALLTRIM(cTo),))
+		ELSE
+			FwLogMsg("EnviEmail", , "EnviEmail", FunName(), "","Falha no Envio do E-Mail: "+ALLTRIM(cTo), 0, (nStart - Seconds()), {})
+		ENDIF
+		alert("Email nao enviado, verifique!")
+		If (.F. );CallProc( "MailSmtpOff" ); Else;MailSmtpOff(); endif
+		RETURN .F. 
+	Else
+		IF !lShedule
+
+		ELSE
+			FwLogMsg("EnviEmail", , "EnviEmail", FunName(), "","E-mail enviado com sucesso: "+ALLTRIM(cTo), 0, (nStart - Seconds()), {})
+		ENDIF
+	ENDIF
+ENDIF
+
+If (.F. );CallProc( "MailSmtpOff" ); Else;MailSmtpOff(); endif
+
+IF lOk
+	IF !lShedule
+
+	ELSE
+		FwLogMsg("EnviEmail", , "EnviEmail", FunName(), "","E-mail enviado com sucesso: "+ALLTRIM(cTo), 0, (nStart - Seconds()), {})
+	ENDIF
+ENDIF
+
+RETURN .T. 

@@ -1,0 +1,818 @@
+#include "totvs.ch"
+#include "topconn.ch"
+#include "tbiconn.ch"
+#include "ozminerals.ch"
+
+Static __aActiveLogs
+Static lAmbProduction
+
+namespace libOZminerals
+
+/*/{Protheus.doc} isAmbProduction
+
+	Retorna se o Protheus está sendo usado em Ambiente de Produção
+	avaliado pelo nome da conexão do DBACCESS
+
+@type function
+@author Fabio Santos - CRM Service
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@return logical, lRet - Indica se está em ambiente de produção
+
+@sample
+	libOZminerals.u_isAmbProduction()
+
+@nested-tags:Frameworks/libOzminerals
+/*/ 
+User Function isAmbProduction() as logical
+	Local cAliasProducao	:= AllTrim(Upper(GetNewPar("OZ_DBPROD","PRODUCAO")))		as character
+	Local cDbServerProducao	:= AllTrim(Upper(GetNewPar("OZ_DBSPROD","10.10.0.205")))	as character
+	Local cAliasDbAccess	:= ""														as character
+	Local cDbServer			:= ""														as character
+	Local cOwnerProducao	:= AllTrim(Upper(GetNewPar("OZ_OWNEPRD","PROTPRD")))		as character
+	Local cBDProducao		:= AllTrim(Upper(GetNewPar("OZ_BDSQLPR","Protheus11")))		as character
+	Local cOwnerBD			:= AllTrim(Upper(u_getDBOwner()))							as character
+	Local cArqIni			:= GetAdv97()												as character
+	Local lRet 				:= .F.														as logical
+	
+	If ( cOwnerBD $ cOwnerProducao .Or. cOwnerBD $ cBDProducao )
+		lRet := .T.
+	Else	
+		cAliasDbAccess	:= Upper( AllTrim( GetPvProfString("DBAccess", "ALIAS", "undefined" , cArqIni ) ) )
+		If ( cAliasDbAccess == "UNDEFINED" )
+			cAliasDbAccess := Upper( AllTrim( GetPvProfString( GetEnvServer(), "TOPALIAS", "undefined" , cArqIni ) ) )
+		Endif
+
+		cDbServer	:= Upper( AllTrim( GetPvProfString("DBAccess", "SERVER", "undefined" , cArqIni ) ) )
+		If ( cDbServer == "UNDEFINED" )
+			cDbServer := Upper( AllTrim( GetPvProfString( GetEnvServer(), "TOPSERVER", "undefined" , cArqIni ) ) )
+		Endif
+		
+		lRet := ( cAliasDbAccess == cAliasProducao .And. cDbServer == cDbServerProducao )
+	EndIf
+	
+Return lRet
+
+/*/{Protheus.doc} getError
+
+	Rotina que recupera o Log da Rotina Automática, sem excluir o Log Padrão
+	Requer Private lAutoErrNoFile 	:= .T.
+	
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@param [cSeparator], character, Caracter Separador. Padrão: CRLF
+@param [lSimpleLog], logical, Indica se deve gerar um Log simplificado (Somente com o Conteúdo Inválido). Padrão: .F.
+@param [lClearError], logical, Indica se deve limpar os Logs Anteriores. Padrão: .T. (Não Mantém os logs anteriores)
+@param [cSimpleLog], character, Mensagem de Log Simples. Passar por Referência
+@param [cCompleteLog], character, Mensagem de Log completa. Passar por Referência
+
+@return character, cError - Erro da Rotina Automática
+
+@sample
+	cError := libOzminerals.u_getError()
+	
+@see https://tdn.totvs.com/pages/releaseview.action?pageId=6815090
+/*/
+User Function getError(cSeparator, lSimpleLog, lClearError, cSimpleLog, cCompleteLog) as character
+	Local aAutoErro 		:= {} 		as array
+	Local nLog				:= 1        as numeric
+	Local cFolder 			:= "" 		as character
+	Local cFileName			:= "" 		as character
+	Local cRoutine			:= "" 		as character
+	Local cFunctionOrigin	:= "" 		as character	
+	Local cUserLogin		:= "" 		as character
+	Local cStart			:= "" 		as character
+	Local cStop				:= "" 		as character
+	Local cLogs				:= ""       as character
+	Local nRoutine			:= 0		as numeric
+
+	Default cSeparator		:= CRLF
+	Default lSimpleLog		:= .F.
+	Default lClearError		:= .T.
+	Default cSimpleLog		:= ""
+	Default cCompleteLog	:= ""
+	
+	If ( Type("lAutoErrNoFile") == "L" .And. lAutoErrNoFile )
+		aAutoErro := GetAutoGRLog()
+
+		For nLog:=1 to Len(aAutoErro)		
+			
+			//Tratamento para Mensagens de Erro de Rotinas Automáticas - Padrão TOTVS
+			If (nLog <= 2) .Or. ("Invalido" $ AllTrim(aAutoErro[nLog]))
+				cSimpleLog += AllTrim(aAutoErro[nLog]) + cSeparator
+			Endif
+
+			If !Empty(cCompleteLog)
+				cCompleteLog += CRLF
+			Endif
+			cCompleteLog += AllTrim(aAutoErro[nLog])
+		Next nLog
+
+		If ( Lower("Mensagem do erro: [") $ Lower(cSimpleLog) )
+			cStart		:= "Mensagem do erro: ["
+			cStop		:= "]"
+			cSimpleLog 	:= libOzminerals.u_getStringBetweenSymbols(cSimpleLog, cStart, cStop)
+		EndIf
+		
+		cSimpleLog  := FwCutOff(cSimpleLog)
+		
+		If ( lSimpleLog )
+			cLogs := cSimpleLog
+		Else
+			cLogs := cCompleteLog
+
+			If ( Empty(cLogs) )
+				cLogs := "Erro não Identificado"
+			EndIf
+
+			If ( Lower("getError") $ Lower(ProcName(1)) )
+				nRoutine := 2
+			Else
+				nRoutine := 1
+			EndIf
+			cFunctionOrigin := ProcName(nRoutine)
+			cRoutine		:= FunName()
+			cUserLogin		:= IIf(Type("cUserName") == "C" .And. !Empty(cUserName),cUserName,"JOB")		
+
+			If !( "Rotina de Menu:" $ cLogs ) .And. cRoutine <> "RPC"
+				cLogs += CRLF + "Rotina de Menu: " + cRoutine
+			EndIf
+			If !( "Usuário:" $ cLogs )
+				cLogs += CRLF + "Usuário: " + cUserLogin
+			EndIf
+			If !( "Função de Origem:" $ cLogs )
+				cLogs += CRLF + "Função de Origem: " + cFunctionOrigin
+			EndIf
+			If !( "Empresa/Filial:" $ cLogs )
+				cLogs += CRLF + "Empresa/Filial: " + cEmpAnt + "/" + cFilAnt
+			EndIf
+			If !( "Ambiente Protheus:" $ cLogs )
+				cLogs += CRLF + "Ambiente Protheus: " + GetEnvServer()
+			EndIf
+			If !( "Data/Hora do Log:" $ cLogs )
+				cLogs += CRLF + "Data/Hora do Log: " + DtoC(Date()) + "/" + Time()
+			EndIf			
+
+			cCompleteLog := cLogs
+		Endif
+
+		If !( lClearError )
+			AutoGrLog(cLogs)
+		Endif
+	Else
+		cRoutine	:= FunName()
+		cUserLogin	:= IIf(Type("cUserName") == "C" .And. !Empty(cUserName),cUserName,"JOB")
+		cFolder 	:= "\logs\"
+		cFileName	:= "libOzminerals.Utils_" + cRoutine + "_" + cUserLogin + DtoS(Date()) + "_" + StrTran(Time(),":","") + ".log"
+		
+		FwMakeDir(cFolder)
+		MostraErro(cFolder,cFileName)
+		cLogs := MemoRead(cFolder+cFileName)
+	Endif
+
+Return cLogs
+
+/*/{Protheus.doc} getErrorBlock
+
+	Retorna a Mensagem de Error Log Fatal Completa
+	Mas apresenta as Variáveis de Ambiente Separadamente em cErrorEnv (Passar por Referência - Opcional)
+	Usar Função dentro de Bloco de Código encapsulado dentro de um Begin Sequence..End Sequence
+	Vide Função ErrorBlock()
+	
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@param [oError], object, Objeto de Erro
+@param [cError], character, Mensagem de Erro - Passar por Referência
+@param [cErrorEnv], character, Conteúdo da Variável de Ambiente - Passar por Referência
+
+@sample
+	libOzminerals.u_getErrorBlock(oError,@cError,@cErrorEnv)
+	
+@nested-tags:Frameworks/libOzminerals
+/*/
+User Function getErrorBlock(oError as object, cError as character, cErrorEnv as character) as character	
+	Local lAuditError := .F. as logical
+	
+	cError := ""
+	
+	cError += CRLF + oError:Description
+	cError += CRLF + oError:ErrorStack
+	showLogInConsole(cError)
+	
+	If ( lAmbProduction == Nil )
+		lAmbProduction := libOzminerals.u_isAmbProduction()
+	EndIf
+	
+	If ( lAmbProduction )	
+		If ( Type("lAuditAPI") == "L" )
+			lAuditError := lAuditAPI
+		ElseIf ( Type("lAudit") == "L" )
+			lAuditError := lAudit
+		Endif
+	Else
+		lAuditError := .T.
+	EndIf
+	
+	If ( lAuditError )
+		cErrorEnv := ""
+		cErrorEnv := CRLF + oError:ErrorEnv
+		showLogInConsole(cErrorEnv)
+	Endif
+	
+	//Sai do Sequence
+	Break
+	
+Return
+
+/*/{Protheus.doc} formatMVPar
+
+	Formata o parâmetro MV_PAR para ser usado em grupos de perguntas
+	Atualiza o MV_PAR passado como referência para a rotina
+	Para uso em campos string de numéros com zero à esquerda, respeitando os campos vazios e campos com "Z"
+	
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@param cMVPAR, character, Parametro MV_PAR passado como referência para ser formatado
+@param [nForceSize], numeric, Indica o tamanho forçado para o retorno. Padrão: Tamanho da variável informada
+@param [lUseZZZ], logical, Indica se deve considerar o tratamento de campo com "ZZZZZZZ". Padrão: .T.
+@param [lFormatDigit], logical, Indica se deve formatar números. Padrão: .T.
+
+@return logical, lRet - Sempre verdadeiro (Para ser usado em campos de validação)
+
+@sample
+	Validação do MV_PAR01 = libOzminerals.u_formatMVPar(@MV_PAR01)
+	Validação do MV_PAR02 = libOzminerals.u_formatMVPar(@MV_PAR02)
+	Validação do MV_PAR03 = libOzminerals.u_formatMVPar(@MV_PAR03,10)
+	Validação do MV_PAR04 = libOzminerals.u_formatMVPar(@MV_PAR04,10)
+	Validação do MV_PAR05 = libOzminerals.u_formatMVPar(@MV_PAR05,,,.F.)
+	Validação do MV_PAR05 = libOzminerals.u_formatMVPar(@MV_PAR06,,,.F.)
+
+@nested-tags:Frameworks/libOzminerals
+/*/
+User Function formatMVPar(cMVPAR,nForceSize,lUseZZZ,lFormatDigit)
+	Local nSize 		:= 0
+	Local uContent		:= ""
+	Local lRet			:= AlwaysTrue()
+	
+	Default nForceSize	:= 0
+	Default lUseZZZ		:= .T.
+	Default lFormatDigit:= .T.
+	
+	uContent:= cMVPAR
+	
+	If ( ValType(cMVPAR) == "C" )
+		
+		If ( nForceSize > 0 )
+			nSize 	:= nForceSize
+		Else
+			nSize 	:= Len(cMVPAR)
+		Endif
+	
+		If ( "Z" $ cMVPAR .And. lUseZZZ )
+			uContent := Replicate("Z",nSize)
+		ElseIf ( IsDigit(cMVPAR) .And. lFormatDigit )
+			uContent := StrZero(Val(cMVPAR),nSize)
+		ElseIf ( Empty(cMVPAR) )
+			uContent := PADR(cMVPAR,nSize)
+		EndIf
+	EndIf
+	
+	cMVPAR := uContent
+	
+Return lRet
+
+/*/{Protheus.doc} existAliasField
+
+	Verifica se o campo existe em um determinado Alias (Tabela Real ou Query Aberta)
+
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@param cField, character, Nome do Campo a ser pesquisado
+@param [cAlias], character, Alias da tabela a pesquisa. Se não informado irá considerar o Alias Padrão aberto. Se existir a variável Private cAliasDefault considera esse alias
+@param [lShowMsg], logical, Indica se apresenta a mensagem de erro. Padrão: .F.
+@param [lUseFieldPos], logical, Indica se usado a Função FieldPos internamente. Padrão: .T.
+@param [lUseDefaultSize], logical, Indica se fixa o tamanho do campo a ser avaliado. Padrão: .T.
+@param [nDefaultSize], numeric, Tamanho do Campo padrão. Padrão: 10
+
+@return logical, Indica se o Alias existe na tabela
+
+@nested-tags:Frameworks/libOzminerals
+/*/
+User Function existAliasField(cField as character,cAlias,lShowMsg,lUseFieldPos,lUseDefaultSize,nDefaultSize) as logical
+	Local nField			:= 0	as numeric
+	Local cFieldName		:= ""	as character
+	Local lRet 				:= .F. 	as logical
+
+	Default cAlias			:= Iif(Type("cAliasDefault")=="C",cAliasDefault,"")
+	Default lShowMsg		:= .F.
+	Default lUseFieldPos	:= .T.
+	Default lUseDefaultSize	:= .T.
+	Default nDefaultSize	:= 10
+	
+	If ( lUseDefaultSize .And. nDefaultSize > 0 )
+		cField := PADR(cField,nDefaultSize," ")
+	Endif
+
+	If ( !Empty(cAlias) )
+		If ( Select(cAlias) == 0 )
+			dbSelectArea(cAlias)
+			If ( Select(cAlias) == 0 )
+				ChkFile(cAlias)
+				If ( Select(cAlias) == 0 )
+					Return .F.
+				Endif
+			Endif
+		Endif
+		If ( lUseFieldPos )
+			lRet := ( (cAlias)->(FieldPos(cField)) > 0 )
+		Else
+			For nField:=1 to (cAlias)->(FCount())
+				cFieldName := (cAlias)->(FieldName(nField))
+				If ( Alltrim(Upper(cFieldName)) == AllTrim(Upper(cField)) )
+					lRet := .T.
+					Exit
+				Endif
+			Next nField
+		Endif
+	Else
+		lRet := ( FieldPos(cField) > 0 )
+	Endif
+
+	If ( lShowMsg )
+		cMsg := "Campo '" + AllTrim(cField) + "'"
+		If ( lRet )
+			cMsg += " existe"
+		Else
+			cMsg += " não encontrado"
+		Endif
+		If ( !Empty(cAlias) )
+			cMsg += " no Alias '" + cAlias + "'"
+		Endif
+		If ( lRet )
+			FwAlertInfo(cMsg,GRP_GROUP_NAME)
+		Else
+			FwAlertError(cMsg,GRP_GROUP_NAME)
+		Endif
+	Endif
+
+Return lRet
+
+/*/{Protheus.doc} isInJob
+
+	Verifica se a rotina está sendo executada em JOB
+
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@return logical, Indica se a Rotina está em JOB
+
+@sample
+    lRet := libOzminerals.u_isInJob()
+	
+@nested-tags:Frameworks/libOzminerals
+/*/
+User Function isInJob() as logical
+	Local lRet := .F. as logical
+
+	lRet := ( Type("oMainWnd") <> "O" )
+
+Return lRet
+
+#Define LOGCONFIG_INCONSOLE "1"
+
+/*/{Protheus.doc} showLogInConsole
+
+	Apresenta a Mensagem no Console do Protheus
+	Tratando parâmetros comuns de liga/desliga da mensagem e prefixo
+
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@param cMsg, character, Mensagem a ser enviada para o console
+@param cRoutine, character, Nome da rotina enviada para o log
+@param lActive, logical, Chave de ativação/desativação da rotina
+@param lActiveInLogConfig, logical, Chave de ativação da consulta da tabela ZDP de configuração de logs
+@param nHTTPStatusCode, numeric, Status Code relacionado ao tipo da informação enviada
+
+@param cMsg, character, Mensagem a ser apresentada
+@param [cRoutine], character, Nome da Rotina associada a mensagem
+@param [lActive], logical, Indica se liga a auditoria das mensagens - Padrão: OZ_LOGS ou conforme variáveis Privates lAudit/lAuditAPI
+	
+@nested-tags:Frameworks/libOzminerals
+/*/
+User Function showLogInConsole( cMsg as character, cRoutine , lActive , lActiveInLogConfig as logical, nHTTPStatusCode as numeric ) 
+	Local cFunctionName		:= FunName()	as character
+	Local lDate				:= .F.			as logical
+	Local lTime				:= .F.			as logical
+	Local lCompany			:= .T.			as logical
+	Local lUser				:= .T.			as logical
+	Local lEnvironment		:= .T.			as logical
+	Local lRoutine			:= .F.			as logical
+	Local nRoutines			:= 0			as numeric
+	Local lLineRoutine		:= .F.			as logical
+	Local lUseLogInConsole	:= .T. 			as logical
+
+	Default cRoutine			:= Iif(!Empty(cFunctionName),cFunctionName,"libOzminerals_Utils")
+	Default cPrefixe			:= "[" + AllTrim(Upper(cRoutine)) + "][" + DtoC(Date()) + "][" + Time() + "] "
+	//Default lActiveInLogConfig	:= .F.
+	//Default nHTTPStatusCode		:= HTTP_OK
+	
+	If ( lActive == Nil .And. Select("SX6") > 0 )
+		lActive := isLogActive(cRoutine)		
+	EndIf
+
+	If ( lActive )		
+
+		If lUseLogInConsole	
+			cMsg := AllToChar(cMsg)
+			cMsg := cPrefixe + OEMToAnsi(cMsg)
+
+			u_OZGEN18(cMsg,lDate,lTime,lCompany,lUser,lEnvironment,lRoutine,nRoutines,lLineRoutine)
+		Endif
+	EndIf
+Return
+
+/*
+	Rotina para verificar se o log está ativo para a rotina e filial atual
+	Considerando um parâmetro global, a variável Private lAudit e se o Objeto do ImpExpData está na memória
+	Criando um cache para melhoria de performance
+	Usa a varável Static __aActiveLogs para gravar o conteúdo
+	Baseado no Conceito da Rotina SuperGetMV() nativa Protheus
+*/
+Static Function isLogActive(cRoutine as character) as logical
+	Local lActiveLogs		:= GetNewPar("ZZ_LOGS",.T.)		as logical
+	Local lCheckAudit		:= GetNewPar("ZZ_ADUTILS",.T.)	as logical
+	Local lCheckImpExpData	:= GetNewPar("ZZ_ADIEDAT",.T.)	as logical
+	Local aRecord			:= {}							as array
+	Local nFind 			:= 0							as numeric
+	Local lLogActive		:= .T.							as logical
+	
+	If ( PCount() == 0.00 )
+		__aActiveLogs := Nil
+	Else	
+		nFind := aScan( __aActiveLogs , { |Record| Record[1] == cFilAnt .And. Record[2] == cRoutine } )
+		If ( nFind == 0 )
+			Default __aActiveLogs := {}
+			
+			//Chave Geral
+			lLogActive	:= lActiveLogs
+			
+			//Chave Específica
+			If ( lLogActive .And. lCheckAudit )
+				If ( Type("lAudit") == "L" )
+					lLogActive	:= lAudit
+				Endif
+			Endif
+			
+			//Chave Específica do ImpExpData quando relacionado a Definição do ImpExpData
+			If ( lLogActive .And. lCheckImpExpData )
+				If ( Type("oImpExpData") == "O" )
+					lLogActive := oImpExpData:lAtivaLogs
+				Endif
+			Endif
+		
+			aRecord := {}
+			aAdd( aRecord , cFilAnt )
+			aAdd( aRecord , cRoutine )
+			aAdd( aRecord , lLogActive )
+			
+			aAdd( __aActiveLogs , aRecord )
+		Else
+			lLogActive := __aActiveLogs[nFind,03]
+		Endif
+	Endif
+	
+Return lLogActive
+
+/*
+	Rotina de Teste para validação das funcionalidades do log de console
+	ERROR: InterFunctionCall: cannot find function RPCSETENV in AppMap
+	ERROR: InterFunctionCall: cannot find function FUNNAME in AppMap	
+	
+	Para Debug:
+	libOzminerals.u_tstShowConsole
+*/
+User Function tstShowConsole()
+	Local cCodEmp	:= "01"
+	Local cCodFil	:= "01"
+
+	PREPARE ENVIRONMENT EMPRESA cCodEmp FILIAL cCodFil MODULO "FAT"
+		libOzminerals.u_showLogInConsole("TESTE")
+		libOzminerals.u_showLogInConsole("TESTE2","ROTINA1",.F.)
+		libOzminerals.u_showLogInConsole("TESTE2.1","ROTINA1",.T.)
+
+		Private lAudit := .T.
+		libOzminerals.u_showLogInConsole("TESTE3","ROTINA1")
+		libOzminerals.u_showLogInConsole("TESTE3.1","ROTINA1")
+		libOzminerals.u_showLogInConsole("TESTE3.2","ROTINA1")
+
+		lAudit := .F.
+		libOzminerals.u_showLogInConsole("TESTE4","ROTINA2")
+	RESET ENVIRONMENT
+
+Return
+
+/*/{Protheus.doc} getStrAliasFields
+
+	Retorna todos os campos do Alias Informado
+
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@param cAlias, character, Alias da Tabela para buscar os campos
+@param [cFieldsToIgnore], character, Campos a serem ignorados na busca
+
+@return character, cFields - Nomes dos Campos do Alias solicitado
+
+@sample
+	Uso no ImpExpData 
+	#( cCamposSC9 := libOzminerals.u_getStrAliasFields("SC9","C9_FILIAL,C9_PEDIDO,C9_ITEM"), "")#
+	
+	SELECT
+		R_E_C_N_O_
+		,C9_FILIAL
+		,C9_PEDIDO
+		,#cCamposSC9#
+	
+@nested-tags:Frameworks/libOzminerals
+/*/
+User Function getStrAliasFields(cAlias,cFieldsToIgnore) as character
+    Local cField  := ""
+    Local aFields := {}
+    Local nField  := 0
+    Local cFields := ""
+
+    aFields := libOzminerals.u_getAliasFields(cAlias,cFieldsToIgnore)
+
+    For nField:=1 to Len(aFields)
+        cField  := aFields[nField]
+        If nField <> Len(aFields)
+			cFields += cField + "," + Chr(13)+Chr(10)
+		Else
+			cFields += cField
+		Endif
+	Next nField
+
+Return cFields
+
+/*/{Protheus.doc} getSiglaModuloProtheus
+
+	Retorna a Sigla do Módulo conforme o número do módulo
+
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@param nNumModulo, numeric, Número do Módulo
+@param [lShortName], logical, Indica que deve ser apresentado a sigla reduzida do Módulo sem o termo "SIGA" - Padrão: .T.
+
+@return character, cSiglaModuloProtheus - Sigla do Módulo Protheus
+
+@sample
+	cSiglaModulo := libOzminerals.u_getSiglaModuloProtheus(97) --> ESP
+		
+@see NGRetModNa()
+
+@nested-tags:Frameworks/libOzminerals
+/*/
+User Function getSiglaModuloProtheus(nNumModulo,lShortName)
+	Local cSiglaModuloProtheus := ""
+	
+	Default lShortName	:= .T.
+	
+	cSiglaModuloProtheus := QA_AmbDet(nNumModulo,,1)
+
+	If ( lShortName )
+		cSiglaModuloProtheus := StrTran(cSiglaModuloProtheus,"SIGA","")
+	EndIf
+
+Return cSiglaModuloProtheus
+
+/*/{Protheus.doc} addLogs
+
+	Tratamento de Logs para Rotina Automática e pela Interface com Solução
+
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+
+@param cLogs, character, Mensagem de Log a ser apresentada
+@param [cSolucao], character, Mensagem da Solução para o Problema. Padrão: Vazio
+@param [lRet], logical, Indica se é uma mensagem de log de erro ou sucesso. Padrão: .F.
+@param [nMsgs], numeric, Número de Mensagens sendo adicionadas - Padrão: 1
+@param [lHelpMsg], logical, Indica se usado a mensagem da Função Help() fora do modo automático
+@param [lShowMsgSuccess], logical, Indica se deve apresentar mensagem de sucesso
+@param [cRoutine], character, nome da rotina da origem para uso nos logs
+
+@sample
+	libOzminerals.u_addLogs(cLogs,cSolucao,lRet,nMsgs,lAutoNoMsg,lShowMsgSuccess,cRoutine)
+
+@obs
+	Se na mensagem de log contiver elementos HTML serão removidos ao apresentar telas sem tratamento de HTML
+	e mensagens para rotinas automáticas.
+	Possibilita salvar a mensagem em caso de erro.
+
+@nested-tags:Frameworks/libOzminerals
+/*/
+User Function addLogs(cLogs,cSolucao,lRet,nMsgs,lHelpMsg,lShowMsgSuccess,cRoutine)
+	Local cFileLogs			:= "" as character
+	Local nRoutine			:= 1  as numeric
+	Local aSolucao 			:= {} as array
+	
+	Default cLogs			:= ""
+	Default cSolucao		:= ""
+	Default lRet			:= .F.
+	Default nMsgs			:= 1
+	Default lHelpMsg		:= .T.
+	Default lShowMsgSuccess	:= .F.
+	
+	If ( !Empty(cLogs) )
+
+		If ( "addlogs" $ Lower(ProcName(1)) )
+			nRoutine := 2
+		EndIf
+		cFunctionOrigin := ProcName(nRoutine)
+		
+		If ( !Empty(cRoutine) )
+			cLogs += CRLF + "Origem: " + cRoutine
+		EndIf
+
+		If ( lRet )
+			If ( lShowMsgSuccess .And. !IsBlind() .And. !libOzminerals.u_IsInJob() )
+				If ( nMsgs > 3 )
+					cLogs := libOzminerals.u_removeHTMLTags(cLogs)
+					Aviso(GRP_GROUP_NAME,cLogs,{"OK"},3)
+				Else	
+					FwAlertSuccess(cLogs,GRP_GROUP_NAME)					
+				EndIf
+			EndIf
+		Else		
+			If ( !Empty(cSolucao) )
+				aAdd( aSolucao , cSolucao )
+			EndIf
+			
+			If ( IsBlind() .Or. libOzminerals.u_IsInJob() )
+				cLogs := libOzminerals.u_removeHTMLTags(cLogs)
+				If ( lHelpMsg )
+					Help(,,"HELP " + cFunctionOrigin,,cLogs,1,0, Nil, Nil, Nil, Nil, Nil, aSolucao )
+				EndIf
+			Else
+				If ( lHelpMsg )
+					cLogs := libOzminerals.u_removeHTMLTags(cLogs)
+					Help(,,"HELP " + cFunctionOrigin,,cLogs,1,0, Nil, Nil, Nil, Nil, Nil, aSolucao )
+				ElseIf ( nMsgs > 3 )
+					cLogs := libOzminerals.u_removeHTMLTags(cLogs)
+					nAviso:= Aviso(GRP_GROUP_NAME,cLogs,{"SALVAR","OK"},3)
+					If ( nAviso == 1 )
+						cFileLogs := GetTempPath() 
+						cFileLogs += "log_" + DtoS(Date())
+						cFileLogs += "_" + libOzminerals.u_now()
+						cFileLogs += ".txt"
+
+ 						cFileLogs := StrTran(cFileLogs,":","")
+						cFileLogs := StrTran(cFileLogs,".","")
+
+						MemoWrite(cFileLogs,cLogs)
+						If ( File(cFileLogs) )
+							Shellexecute("open",cFileLogs,"","",11)
+						EndIf
+					EndIf
+				Else
+					FwAlertError(cLogs,GRP_GROUP_NAME)
+				EndIf
+			EndIf
+		EndIf
+	EndIf
+	
+	ShowLogInConsole(cLogs,cRoutine)
+	
+Return
+
+/*/{Protheus.doc} getNextCode
+
+	Retorna o próximo código para o processo em N Tentativas
+
+@type function
+@author Fabio Santos
+@since 08/10/2023
+@version P12
+@database MSSQL
+	
+@param cCode, character, Código atual - Passar por Referência
+@param cAliasForm, character, Alias do Formulário
+@param cFieldCode, character, Nome do Campo
+@param lUseGetSXENum, logical, Indica se deve usar o padrão GETSXENum - Padrão: .T.
+@param nLimitTry, numeric, Quantidade de tentativas para buscar nova numeração que não esteja em uso - Padrão: 100
+@param nSleep, numeric, Tempo em ms para aguardar nova tentativa para buscar - Padrão: 250
+@param lShowMsg, logical, Indica se apresenta mensagem quando houve alteração do código
+
+@return character, cCode - Próximo Código retornado
+	
+@nested-tags:Frameworks/libOzminerals
+/*/
+User Function getNextCode(cCode,cAliasForm,cFieldCode,lUseGetSXENum,nLimitTry,nSleep,lShowMsg)
+	Local aAreas			:= Lj7GetArea({cAliasForm})	
+	Local cFilForm			:= FWxFilial(cAliasForm)
+	Local nCont				:= 0	
+	Local cBackupCode		:= cCode
+	Local cLog				:= ""
+	
+	Default lUseGetSXENum	:= .T.
+	Default nLimitTry		:= 100
+	Default nSleep			:= 250
+	Default lShowMsg		:= .F.
+	
+	If ( !Empty(cAliasForm) .And. !Empty(cFieldCode) )
+		If ( !Empty(cCode) )
+			(cAliasForm)->(dbSetOrder(1))
+			If !( (cAliasForm)->(dbSeek(cFilForm+cCode)) )	
+				Return cCode
+			EndIf
+		EndIF
+		
+		While .T.
+
+			++nCont
+
+			If ( lUseGetSXENum )
+				cCode := GetSXENum(cAliasForm,cFieldCode)		
+			Else
+				dbSelectArea(cAliasForm)
+				cCode := NextNumero(cAliasForm,1,cFieldCode,.T.) 
+			EndIf
+
+			(cAliasForm)->(dbSetOrder(1))
+			If !( (cAliasForm)->(dbSeek(cFilForm+cCode)) )
+				Exit
+			Else
+				Sleep(250)
+			EndIf
+
+			If ( nCont > nLimitTry )
+				Exit
+			EndIf
+
+		EndDo
+		
+		cLog := "O código deste processo foi Atualizado Para: " + cCode
+		showLogInConsole(cLog)
+
+		If ( lShowMsg )
+			If ( (!IsBlind() .Or. SrvDisplay()) .AND. ( cBackupCode <> cCode ) )
+				MsgInfo(cLog, GRP_GROUP_NAME)
+			EndIf
+		EndIf
+	EndIf
+	
+	Lj7RestArea(aAreas)
+
+Return cCode
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+	Local na libOzminerals_Utils, chamando a função principal, tratando porém liga/desliga específico
+*/
+Static Function showLogInConsole(cMsg,cRoutine)
+	
+	Default cRoutine	:= ""
+
+	Private lAudit 		:= Iif(Select("SX6")>0,GetNewPar("OZ_LIBVVAD",.T.),.T.)
+	
+	If ( !Empty(cRoutine) )		
+		libOzminerals.u_showLogInConsole(cMsg,cRoutine)
+	Else
+		libOzminerals.u_showLogInConsole(cMsg,"libOzminerals_Utils")
+	EndIf
+	
+Return

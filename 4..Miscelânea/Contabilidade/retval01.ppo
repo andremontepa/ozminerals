@@ -1,0 +1,40 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "Protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "Protheus.ch"
+#line 3 "c:\totvs\projetos_prod\4..miscelânea\contabilidade\\c:/totvs/projetos_prod/4..miscelânea/contabilidade/retval01.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Topconn.ch"
+#line 4 "c:\totvs\projetos_prod\4..miscelânea\contabilidade\\c:/totvs/projetos_prod/4..miscelânea/contabilidade/retval01.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Totvs.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\protheus.ch"
+#line 12 "c:\totvs\projetos_prod\4..miscelânea\contabilidade\\c:/totvs/projetos_prod/4..miscelânea/contabilidade/retval01.prw"
+Function U_RetVal01()
+
+Local nValor:=0
+
+if SD1->D1_RATEIO<>"1" .AND. SD1->D1_CF<>"1151" .AND. SD1->D1_TES<>"162" .AND. SD1->D1_TES<>"008"
+
+    nValor:=SD1->(D1_TOTAL+D1_VALIPI+D1_VALFRE+D1_SEGURO+D1_DESPESA+D1_ICMSRET-D1_VALDESC-IF(SA2->A2_RECISS="N" .OR. SA2->A2_RECISS="",D1_VALISS,0)-IF(SD1->D1_VALIRR>0,D1_VALIRR,0)-D1_VALINS)
+
+Endif
+
+return nValor

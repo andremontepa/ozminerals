@@ -1,0 +1,292 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "PROTHEUS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "PROTHEUS.CH"
+#line 2 "c:\totvs\projetos_prod\especificos\bloqueio pc sem grupoaprov\\c:/totvs/projetos_prod/especificos/bloqueio pc sem grupoaprov/avbutil.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TOTVS.CH"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\protheus.ch"
+#line 3 "c:\totvs\projetos_prod\especificos\bloqueio pc sem grupoaprov\\c:/totvs/projetos_prod/especificos/bloqueio pc sem grupoaprov/avbutil.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\fileio.ch"
+#line 13 "c:\totvs\projetos_prod\especificos\bloqueio pc sem grupoaprov\\c:/totvs/projetos_prod/especificos/bloqueio pc sem grupoaprov/avbutil.prw"
+
+    _ObjNewClass( AVBUtil ,LongNameClass )
+
+
+	Static Method TrocaGrupoAprovacao(cTabela,cNum,cClasse,dData,nTotal)
+	Static Method ValidaGrupoAprovacao(cTabela,xCentroCusto,xItemContabil,xClasseValor)
+	Static Method DeletaGrupoAprovacao(xFil,cNum,cTipo)
+	Static Method GetSM2(cDtTaxa)
+
+_ObjEndClass( )
+
+
+
+
+
+
+
+
+
+
+    Function ___AVBUtil____GetSM2(cDtTaxa )
+
+
+	Local QbLinha	:= chr(13)+chr(10)
+	Local cAliasSM2	:= GetNextAlias()
+	Local cQuery	:= ""
+    Local lExiste   := .T. 
+
+    cQuery := " SELECT SM2.* "+QbLinha
+	cQuery += " FROM "
+	cQuery +=   RetSqlName("SM2") + " SM2 "+QbLinha
+    cQuery += " WHERE SM2.D_E_L_E_T_ = ' ' "+QbLinha
+    cQuery += " AND M2_DATA = '"+cDtTaxa+"' "+QbLinha
+    cQuery += " AND M2_MOEDA2 <> 0 "+QbLinha
+
+    MemoWrite("C:/ricardo/FA080TIT_GetSM2.sql",cQuery)
+    cQuery := ChangeQuery(cQuery)
+    DbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQuery),cAliasSM2, .F. , .T. )
+
+    DbSelectArea(cAliasSM2)
+    (cAliasSM2)->(DbGoTop())
+    nQtdReg := 0; DBEval( {|| nQtdReg := nQtdReg + 1},,,,,.F. )
+    (cAliasSM2)->(DbGoTop())
+
+    If nQtdReg <= 0
+        lExiste := .F. 
+	EndIf
+    (cAliasSM2)->(DbCloseArea())
+Return lExiste
+
+
+
+
+
+
+
+
+
+
+    Function ___AVBUtil____DeletaGrupoAprovacao(xFil,cNum,cTipo )
+
+
+	Local cDelete := ""
+	Local QbLinha := chr(13)+chr(10)
+
+	cDelete := " DELETE FROM " +RetSqlName("SCR")
+	cDelete += " WHERE CR_FILIAL = '"+xFil+"'  "+QbLinha
+	cDelete += " AND   CR_NUM	= '"+cNum+"' "+QbLinha
+	cDelete += " AND   CR_TIPO	= '"+cTipo+"' "+QbLinha
+
+	If TCSQLExec(cDelete) < 0
+        Conout("Erro ao Deletar os Dados da Tabela SCR " + TCSQLError())
+    EndIf
+
+Return Nil
+
+
+
+
+
+
+
+
+
+
+    Function ___AVBUtil____ValidaGrupoAprovacao(cTabela,xCentroCusto,xItemContabil,xClasseValor )
+
+
+	Local cGrupoAprov 		:= ""
+	Local QbLinha			:= chr(13)+chr(10)
+	Local cAliasDBL			:= GetNextAlias()
+	Local cAliasSAL			:= GetNextAlias()
+	Local cQuery			:= ""
+	Local nQtdDBL  			:= 0
+	Local nQtdSAL  			:= 0
+	Local cTpDBL      		:= Alltrim( SuperGetMV("OZ_TPDBL",,"C"))
+	Local lRet				:= .T. 
+
+	cTabela := If( cTabela == nil, "", cTabela ) ;
+	xCentroCusto := If( xCentroCusto == nil, "", xCentroCusto ) ;
+	xItemContabil := If( xItemContabil == nil, "", xItemContabil ) ;
+	xClasseValor := If( xClasseValor == nil, "", xClasseValor ) ;
+
+	cQuery := " SELECT DBL_GRUPO "+QbLinha
+	cQuery += " FROM "
+	cQuery +=   RetSqlName("DBL") + " DBL "+QbLinha
+	cQuery += " WHERE "+QbLinha
+	cQuery += " DBL_FILIAL = '"+FWXFilial("DBL")+"'"+QbLinha
+	cQuery += " AND DBL_CC = '"+xCentroCusto+"'"+QbLinha
+	cQuery += " AND DBL_ITEMCT = '"+xItemContabil+"'"+QbLinha
+	cQuery += " AND DBL_CLVL = '"+xClasseValor+"'"+QbLinha
+	cQuery += " AND DBL_GRUPO NOT LIKE '%MD%' "+QbLinha
+	cQuery += " AND DBL_XTIPO = '"+cTpDBL+"'"+QbLinha
+	cQuery += " AND DBL.D_E_L_E_T_ = ' '"+QbLinha
+
+	MemoWrite("C:/ricardo/ValidaGrupoAprovacao_DBL.sql",cQuery)
+    cQuery := ChangeQuery(cQuery)
+    DbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQuery),cAliasDBL, .F. , .T. )
+
+    DbSelectArea(cAliasDBL)
+    (cAliasDBL)->(DbGoTop())
+    nQtdDBL := 0; DBEval( {|| nQtdDBL := nQtdDBL + 1},,,,,.F. )
+    (cAliasDBL)->(DbGoTop())
+
+    If nQtdDBL <= 0
+		(cAliasDBL)->(DbCloseArea())
+	Else
+		While ! (cAliasDBL)->(Eof())
+			cQuery := " SELECT AL_COD "+QbLinha
+			cQuery += " FROM "
+			cQuery +=   RetSqlName("SAL") + " SAL "+QbLinha
+			cQuery += " WHERE "+QbLinha
+			cQuery += " SAL.D_E_L_E_T_ = ' ' "+QbLinha
+			cQuery += " AND AL_COD = '"+Alltrim((cAliasDBL)->DBL_GRUPO)+"' "+QbLinha
+
+			If cTabela == "SC1"
+				cQuery += " AND AL_DOCSC = 'T' "+QbLinha
+			ElseIf  cTabela == "CN9"
+				cQuery += " AND AL_DOCMD = 'T' "+QbLinha
+			ElseIf cTabela == "SC7"
+				cQuery += " AND AL_DOCPC = 'T' "+QbLinha
+			ElseIf cTabela == "SCP"
+				cQuery += " AND AL_DOCSA = 'T' "+QbLinha
+			EndIf
+
+			MemoWrite("C:/ricardo/ValidaGrupoAprovacao_SAL.sql",cQuery)
+			cQuery := ChangeQuery(cQuery)
+			DbUseArea( .T. ,"TOPCONN",TcGenQry(,,cQuery),cAliasSAL, .F. , .T. )
+
+			DbSelectArea(cAliasSAL)
+			(cAliasSAL)->(DbGoTop())
+			nQtdSAL := 0; DBEval( {|| nQtdSAL := nQtdSAL + 1},,,,,.F. )
+			(cAliasSAL)->(DbGoTop())
+
+			If nQtdSAL <= 0
+				(cAliasSAL)->(DbCloseArea())
+			Else
+				cGrupoAprov := Alltrim((cAliasSAL)->AL_COD)
+				Exit
+			EndIf
+			(cAliasDBL)->(DbSkip())
+		End
+		(cAliasDBL)->(DbCloseArea())
+	EndIf
+
+	If Empty(Alltrim(cGrupoAprov))
+		lRet := .F. 
+	EndIf
+Return {lRet,cGrupoAprov}
+
+
+
+
+
+
+
+
+
+
+    Function ___AVBUtil____TrocaGrupoAprovacao(cTabela,cNum,cClasse,dData,nTotal,cGrpAprov,cRev )
+
+
+    Local cUpd      	:= ""
+    Local QbLinha		:= chr(13)+chr(10)
+    Local cCodGrupo 	:= ""
+	Local cTpDoc		:= ""
+    Local cGRPPad   	:= Alltrim(SuperGetMV("OZ_GRPAD",,"AVB990"))
+    cTabela := If( cTabela == nil, "", cTabela ) ;
+    cNum := If( cNum == nil, "", cNum ) ;
+    cClasse := If( cClasse == nil, "", cClasse ) ;
+    nTotal := If( nTotal == nil, 1, nTotal ) ;
+    dData := If( dData == nil, dDataBase, dData ) ;
+	cGrpAprov := If( cGrpAprov == nil, "", cGrpAprov ) ;
+	cRev := If( cRev == nil, "", cRev ) ;
+
+
+
+
+
+
+
+
+
+
+
+	If Empty(cGrpAprov)
+    	cCodGrupo := cGRPPad
+	Else
+		cCodGrupo := cGrpAprov
+	EndIf
+
+    If cTabela == "SC1"
+        cUpd := " UPDATE "+RetSqlName("SC1") +QbLinha
+        cUpd += " SET C1_APROV = 'B' "+QbLinha
+        cUpd += " WHERE "+QbLinha
+        cUpd += " D_E_L_E_T_ = ' ' "+QbLinha
+        cUpd += " AND C1_FILIAL = '"+FWXFilial("SC1")+"' "+QbLinha
+        cUpd += " AND C1_NUM = '"+cNum+"' "+QbLinha
+
+
+		U_MaAlcDocL({cNum,"SC",nTotal,,,cCodGrupo,,1,1,dData},dData,1,"", .F. )
+    ElseIf cTabela == "SC7"
+        cUpd := " UPDATE "+RetSqlName("SC7") +QbLinha
+        cUpd += " SET C7_APROV = '"+cCodGrupo+"', C7_CONAPRO = 'B' "+QbLinha
+        cUpd += " WHERE "+QbLinha
+        cUpd += " D_E_L_E_T_ = ' ' "+QbLinha
+        cUpd += " AND C7_FILIAL = '"+FWXFilial("SC7")+"' "+QbLinha
+        cUpd += " AND C7_NUM = '"+cNum+"' "+QbLinha
+
+
+		U_MaAlcDocL({cNum,"PC",nTotal,,,cCodGrupo,,1,1,dData},dData,1,"", .F. )
+    ElseIf cTabela == "CN9"
+        cUpd := " UPDATE "+RetSqlName("CN9") +QbLinha
+        cUpd += " SET CN9_APROV = '"+cCodGrupo+"', CN9_XAPROV = '"+cCodGrupo+"' "+QbLinha
+        cUpd += " WHERE "+QbLinha
+        cUpd += " D_E_L_E_T_ = ' ' "+QbLinha
+        cUpd += " AND CN9_FILIAL = '"+FWXFilial("CN9")+"' "+QbLinha
+        cUpd += " AND CN9_NUMERO = '"+cNum+"' "+QbLinha
+		cUpd += " AND CN9_REVISA = '"+cRev+"' "+QbLinha
+		IF Empty(cRev)
+			cTpDoc := "CT"
+		else
+			cTpDoc := "RV"
+		ENDIF
+
+		U_MaAlcDocL({cNum,cTpDoc,nTotal,,,cCodGrupo,,1,1,dData},dData,1,"", .F. )
+	ElseIf cTabela == "SCP"
+
+
+
+
+
+
+
+
+    EndIf
+
+	If TcSqlExec(cUpd) < 0
+		Conout("[AVBUtil] [TrocaGrupoAprovacao]  [" + Dtoc(DATE()) +" "+ Time()+ "]  Falha da Execução do UPDATE - Tabela ("+cTabela+") ...")
+	Else
+		Conout("[AVBUtil] [TrocaGrupoAprovacao]  [" + Dtoc(DATE()) +" "+ Time()+ "]  Update na Tabela "+cTabela+" executado com sucesso ...")
+	EndIf
+Return Nil

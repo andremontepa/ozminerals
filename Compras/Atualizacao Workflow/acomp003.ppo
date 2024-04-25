@@ -1,0 +1,995 @@
+#line 1 "c:/totvs/microsiga-teste/protheus/include\rwmake.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\stdwin.ch"
+#line 14 "rwmake.ch"
+#line 2 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/acomp003.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TbiConn.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Ap5Mail.ch"
+#line 10 "TbiConn.ch"
+#line 3 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/acomp003.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\TbiCode.ch"
+#line 4 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/acomp003.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Dialog.ch"
+#line 28 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Font.ch"
+#line 29 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\PTMenu.ch"
+#line 31 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Print.ch"
+#line 33 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Colors.ch"
+#line 35 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\Folder.ch"
+#line 37 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\msobject.ch"
+#line 38 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\VKey.ch"
+#line 42 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\WinApi.ch"
+#line 44 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCommand.ch"
+#line 47 "protheus.ch"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\FWCSS.CH"
+#line 50 "protheus.ch"
+#line 5 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/acomp003.prw"
+#line 1 "c:/totvs/microsiga-teste/protheus/include\topconn.ch"
+#line 29 "c:\totvs\projetos_prod\compras\atualizacao workflow\\c:/totvs/projetos_prod/compras/atualizacao workflow/acomp003.prw"
+Function U_ACOMP003(nOpcao,oProcess,cNivelWF,cObsWF,cCopiaPa,lAltera,cAnexo,aTmpAprov)
+
+Private cNameEmp    := ""
+Private cAviso		:= ""
+Private cDestino    := ""
+Private bXMSAPRO 	:= .T. 
+Private cxFilial 	:= ""
+Private cCodLiber	:= "000000"
+Private cNivelApr	:= ""
+Private lLiberou    := .F. 
+Private _xUsuario   := " "
+Private cNivelUser  := cNivelWF
+Private cAnexoWF    := ""
+Private cObse       := ""
+Private cCcusto     := ""
+Private cGrpAprova  := ""
+Private lEnvAnexo   := .F. 
+Private nHist		:= 0
+Private cCopia      := " "
+Private cUserpad    := SuperGetMV("MV_XUSRPAD",,"")
+Private cEnvHtm     := .F. 
+Private _cAltera    := ""
+Private cCdUserMail := ""
+Private texto1	    := ""
+Private texto2	    := ""
+Private texto3	    := ""
+Private texto4	    := ""
+Private cGerentCom  := SuperGetMV("MV_XUSGCOM",,"000033")
+Private aTempAprov  := aTmpAprov
+Private nStart		:= 0
+
+If SM0->M0_CODIGO = "01"
+	cNameEmp := "AVB"
+ElseIf SM0->M0_CODIGO = "02"
+	cNameEmp := "VDM"
+ElseIf SM0->M0_CODIGO = "03"
+	cNameEmp := "SLM"
+ElseIf SM0->M0_CODIGO = "04"
+	cNameEmp := "ARM"
+ElseIf SM0->M0_CODIGO = "05"
+	cNameEmp := "ACG"
+ElseIf SM0->M0_CODIGO = "06"
+	cNameEmp := "MCT"
+ElseIf SM0->M0_CODIGO = "07"
+	cNameEmp := "MAB"
+EndIf
+
+If ValType(nOpcao) = "A"
+	nOpcao := nOpcao[1]
+Endif
+
+If nOpcao == NIL
+	nOpcao := 0
+EndIf
+
+If cNivelWF == NIL
+	cNivelWF  := ""
+Endif
+
+If cNivelUser == NIL
+	cNivelUser  := ""
+Endif
+
+If aTmpAprov == NIL
+	aTempAprov := {}
+Else
+	aTempAprov := aTmpAprov
+EndIf
+
+If cObsWF == NIL
+	cObse  := ""
+Else
+	cObse  := "REMETENTE : "+Alltrim(capital(cUserName))
+	if !Empty(cObsWF)
+		cObse  += Chr(13)+Chr(10)+"OBSERVA??O DE REENVIO DE LIBERA??O  : "+Alltrim(cObsWF)
+	EndIf
+EndIf
+
+If cCopiaPa == NIL
+	cCopiaPa:= ""
+Else
+	cCopia += cCopiaPa
+EndIf
+
+If lAltera == NIL
+	_cAltera := ""
+Else
+	if lAltera
+		_cAltera := "Pedido Alterado pelo usuario "+Alltrim(__cUserId)+ " - " +Alltrim(capital(cUserName))
+	EndIf
+EndIf
+
+if cAnexo == NIL
+	cAnexoWF := ""
+Else
+	cAnexoWF := cAnexo
+
+	if !Empty(cAnexoWF)
+		lEnvAnexo := .T. 
+	EndIf
+
+EndIf
+
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","Opcao:"+cValtochar(nOpcao), 0, (nStart - Seconds()), {})
+
+If oProcess == NIL
+	oProcess := TWFProcess():New( "PEDCOM", "Pedido de Compras" )
+EndIf
+
+
+
+
+
+
+
+
+SetPrvt("CPAR,NBARRA,N_ITEM,C_MAT,C_DEST,CGRAP")
+SetPrvt("C_NUM,C_MOTIVO,N_TOTPC,CGRAPANT,N_TERMINA,N_DOHTML")
+SetPrvt("CRAIZ,NRET,NHLDHTM,NHLDSCP,CIND,C_PCANT")
+SetPrvt("N_QTDPC,N_FRTPC,A_ITENS,LCABEC,_AREGISTROS,NLIMITE")
+SetPrvt("CAB_NUM,CAB_EMIS,CAB_FORN,CAB_COND,CAB_NOME,_NI")
+SetPrvt("ARRAYCAB,ARRAYITENS,C_ITPED,NPRESUP,CAPROV,AINFO")
+SetPrvt("CMAILAP,CNOMEAP,CORIGEM,CABEC,NHDLVLR,NCOUNT")
+SetPrvt("NRESULT,CHTML,NHDLCONNECT")
+
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Vai entrar no Tipo De Opö?o: "+ alltrim(str(nOpcao)) , 0, (nStart - Seconds()), {})
+
+Do Case
+	Case nOpcao == 0
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Entrando no SPCIniciar", 0, (nStart - Seconds()), {})
+		SPCIniciar( oProcess ,cNivelUser )
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Saiu no SPCIniciar", 0, (nStart - Seconds()), {})
+	Case nOpcao == 1
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Entrando no SPCRetorno", 0, (nStart - Seconds()), {})
+		SPCRetorno( oProcess )
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Saiu no SPCRetorno", 0, (nStart - Seconds()), {})
+	Case nOpcao == 2
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Entrando no SPCTimeOut", 0, (nStart - Seconds()), {})
+		SPCTimeOut( oProcess )
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Saiu no SPCTimeOut", 0, (nStart - Seconds()), {})
+	End
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Saiu do Tipo Opö?o: "+ alltrim(str(nOpcao)) , 0, (nStart - Seconds()), {})
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: ************************************************** PROCESSO ENCERRADO COM SUCESSO **************************************************", 0, (nStart - Seconds()), {})
+	oProcess:Free()
+Return()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Static Function SPCRetorno( oProcess )
+Local cTipo		:= "PC"
+Local cNum		:= oProcess:oHtml:RetByName("pedido")
+Local cxFilial	:= oProcess:oHtml:RetByName("FILIAL")
+Local cResp		:= oProcess:oHtml:RetByName("RBAPROVA")
+Local cJusti	:= oProcess:oHtml:RetByName("lbmotivo")
+Local codAprov	:= oProcess:oHtml:RetByName("lb_aprovado")
+Local cCopia    := ""
+Local cDestino  := ""
+Local xLReprova := .F. 
+
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","INICIO DE RETORNO WF APROVA??O ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Iniciando 1002 ", 0, (nStart - Seconds()), {})
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","INICIO DE RETORNO WF APROVA??O ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" codAprov1: "+ codAprov, 0, (nStart - Seconds()), {})
+
+codAprov:= codAprov
+
+DbSelectArea("SC7")
+SC7->(dbSetOrder(1))
+SC7->(dbgotop())
+If SC7->(dbSeek(cxFilial+cNum))
+
+	cGrupo 		:= SC7->C7_APROV
+	cPCLib 		:= SC7->C7_NUM
+	cPCUser		:= SC7->C7_USER
+
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","RETORNO WF APROVA??O ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Grupo"+cGrupo+" cPCLib: "+ cPCLib +" cPCUser: "+cPCUser, 0, (nStart - Seconds()), {})
+Else
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","ERRO NAO ACHOU SC7", 0, (nStart - Seconds()), {})
+Endif
+
+If Select("SC7") > 0
+	SC7->(dbCloseArea())
+EndIf
+
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" cResp: " + cResp, 0, (nStart - Seconds()), {})
+
+if cResp == "1"
+	nOpc:=2
+else
+	nOpc:=3
+endif
+
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" cResp: " + cResp+" nOpc: "+alltrim(str(nOpc)), 0, (nStart - Seconds()), {})
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Vai entrar no WHILE DO SCR CHAVE:"+cxFilial+cTipo+cNum+codAprov, 0, (nStart - Seconds()), {})
+
+DbSelectArea("SCR")
+SCR->(dbSetOrder(2))
+SCR->(dbgotop())
+if SCR->(dbSeek(cxFilial+cTipo+cNum))
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Vai entrar no if SCR->(dbSeek(cxFilial+cTipo+cNum)):"+cxFilial+cTipo+cNum, 0, (nStart - Seconds()), {})
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","RETORNO WF APROVA??O ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Entrou no !SCR->(EOF()) .AND. cxFilial == SCR->CR_FILIAL .AND. cNum == SCR->CR_NUM"+ cxFilial+"X"+SCR->CR_FILIAL+"X"+cNum+"X"+SCR->CR_NUM, 0, (nStart - Seconds()), {})
+
+	While !SCR->(EOF()) .AND.  alltrim(cxFilial) == alltrim(SCR->CR_FILIAL) .AND.  alltrim(cNum) == alltrim(SCR->CR_NUM)
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","RETORNO WF APROVA??O ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Entrou no while !SCR->(EOF()) .AND. cxFilial == SCR->CR_FILIAL .AND. cNum == SCR->CR_NUM", 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","RETORNO WF APROVA??O ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Entrou no codAprov == SCR->CR_USER"+codAprov == SCR->CR_USER , 0, (nStart - Seconds()), {})
+
+		if codAprov == SCR->CR_USER
+
+			FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","RETORNO WF APROVA??O ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Entrou no if codAprov == SCR->CR_USER", 0, (nStart - Seconds()), {})
+
+			nTotal    	:= 	SCR->CR_TOTAL
+			cAprov    	:= 	SCR->CR_APROV
+			cCodLiber	:=	SCR->CR_USER
+			cNivelApr	:=	SCR->CR_NIVEL
+
+			if (SCR->CR_STATUS = "03" .or.  SCR->CR_STATUS = "04")
+			     Return( .F. )
+			EndIf
+
+			FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Iniciando a funö?o de Liberaö?o/Bloqueio ", 0, (nStart - Seconds()), {})
+			FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Aprovado:  "+cAprov+" Grupo: "+cGrupo+" Justificativa: "+cJusti, 0, (nStart - Seconds()), {})
+
+			lLiberou := U_MaAlcDocL({SCR->CR_NUM,SCR->CR_TIPO,SCR->CR_TOTAL,cAprov,,cGrupo,,,,,cJusti},date(),If(nOpc==2,4,6))
+
+			if lLiberou
+				FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Fim da funö?o de Liberaö?o/Bloqueio (LIBEROU)", 0, (nStart - Seconds()), {})
+			Else
+				xLReprova := .T. 
+				FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Fim da funö?o de Liberaö?o/Bloqueio (BLOQUEOU)", 0, (nStart - Seconds()), {})
+			Endif
+			Exit
+		Else
+			FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","RETORNO WF APROVA??O ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" n?o e o liberador n?o e o liberador", 0, (nStart - Seconds()), {})
+        EndIf
+
+		SCR->(dbskip())
+	Enddo
+Else
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","RETORNO WF APROVA??O ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" N?o achou SCR(xxx): "+ cxFilial+cTipo+cNum+codAprov, 0, (nStart - Seconds()), {})
+Endif
+
+If lLiberou
+	If Select("SC7") > 0
+		SC7->(dbCloseArea())
+	EndIf
+
+	Dbselectarea("SC7")
+	SC7->(dbSetOrder(1))
+	SC7->(dbgotop())
+	SC7->(dbseek(cxFilial+cNum))
+	While !SC7->(Eof()) .AND.  SC7->C7_FILIAL+SC7->C7_NUM  == cxFilial+cNum
+
+		if SC7->C7_FILIAL+SC7->C7_NUM  == cxFilial+cNum
+			FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Iniciando a Execuö?o o Reclock(SC7,.F.) ", 0, (nStart - Seconds()), {})
+			Reclock("SC7", .F. )
+				SC7->C7_CONAPRO	:= "L"
+				SC7->C7_OBS		:= AllTrim(SC7->C7_OBS)+"/"+cJusti
+			SC7->(MsUnlock())
+			FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+"Filial:" +SC7->C7_FILIAL+" Pedido:"+SC7->C7_NUM+" Valor do SC7->C7_CONAPRO: "+SC7->C7_CONAPRO, 0, (nStart - Seconds()), {})
+			FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Valor do SC7->C7_OBS: "+alltrim(SC7->C7_OBS)+" Valor do SC7->C7_CONAPRO: "+alltrim(SC7->C7_CONAPRO), 0, (nStart - Seconds()), {})
+			FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Gravou SC7->(MsUnlock())", 0, (nStart - Seconds()), {})
+		Endif
+		SC7->(dbSkip())
+	EndDo
+
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Filial: "+ cxFilial+ "Aprovando o Pedido: "+cNum, 0, (nStart - Seconds()), {})
+
+	oProcess:Finish()
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Fim a oProcess:Finish() ", 0, (nStart - Seconds()), {})
+Else
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Filial: "+ cxFilial+ "Rastreia o Pedido: "+cNum+"Processo: "+oProcess:fProcessID+"."+oProcess:fTaskID, 0, (nStart - Seconds()), {})
+
+
+	oProcess:Finish()
+
+	Dbselectarea("SC7")
+
+	if nOpc=2
+
+		cNivelUser := padl(Val(cNivelApr)+1,2,"0")
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O)  Filial: "+ cxFilial+ " Inicia Chama SPCIniciar", 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","SPCIniciar( oProcess,cNivelUser )  ENVIADO "+cxFilial+" "+cNum+" NIVEL "+cNivelUser, 0, (nStart - Seconds()), {})
+
+		DbSelectArea("SC7")
+		SC7->(dbSetOrder(1))
+		SC7->(dbgotop())
+		if SC7->(dbSeek(cxFilial+cNum))
+
+        FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","*************Numero do Pedido Variavel     SPCIniciar( oProcess,cNivelUser ) "+cxFilial+" "+cNum, 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","****************************************************Enviando Pedido para o Proximo Nivel****************************************************", 0, (nStart - Seconds()), {})
+
+		if !Empty(cCodLiber)
+			SPCIniciar(oProcess,cNivelUser)
+		EndIf
+
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","****************************************************Envio de Pedido para o Proximo nivel finalizado com Sucesso****************************************************", 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","SPCIniciar( oProcess,cNivelUser )  ENVIADO "+cxFilial, 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O)  Filial: "+ cxFilial+ " Fim Chama SPCIniciar", 0, (nStart - Seconds()), {})
+
+		EndIf
+	Endif
+EndIf
+
+cTipo  :="PC"
+cDocto := cNum+Space(Len(SCR->CR_NUM)-Len(cNum))
+
+DbSelectArea("SCR")
+SCR->(DbSetOrder(2))
+if !SCR->(dbSeek(cxFilial+cTipo+cDocto) )
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","INICIO DE RETORNO WF APROVA??O (WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" N?o achou SCR (1): "+ xFilial("SCR")+"PC"+cDocto, 0, (nStart - Seconds()), {})
+Endif
+
+cMSGAprov := iif(nOpc=2,"APROVADO","REPROVADO")
+
+cAviso:="NOTIFICA??O - Pedido de Compra "+cMSGAprov+" - Pedido No "+cNum+" - Empresa "+cNameEmp+" - Filial "+cxFilial
+
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" INICIANDO HTML ", 0, (nStart - Seconds()), {})
+
+
+xHTM :='<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"> '
+xHTM +='<html xmlns="http://www.w3.org/1999/xhtml"> '
+xHTM +="<head>"
+xHTM +='	<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" /> '
+xHTM +="	<title>"+cAviso+"</title>"
+xHTM +="</head>"
+xHTM +='<body bgcolor="#FFFFFF"> '
+xHTM +="	<TABLE WIDTH=100%>"
+xHTM +="		<TR>"
+xHTM +='			<TH ALIGN="right" BGCOLOR="#FFFFFF">'
+xHTM +='				<FONT  SIZE="5" COLOR="#FFFFFF" FACE="verdana, arial, helvetica, times" >'
+xHTM +='  				<img id="_x0000_i1025" src="http://avancoresources.com/wp-content/uploads/AvancoLogo.png" border="0" width="263" height="123"></span></b></td>'
+xHTM +="			</TH>"
+xHTM +="		</TR>"
+xHTM +="	</TABLE>"
+xHTM +="	<TABLE WIDTH=100%>"
+xHTM +="		<TR>"
+xHTM +='			<TH ALIGN="Center" BGCOLOR="#FFFFFF"> '
+xHTM +='				<FONT  SIZE="5" COLOR="#005151" FACE="verdana, arial, helvetica, times" >'
+xHTM +="                <BR/>"
+xHTM +="                "+cAviso+" "
+xHTM +="                <BR/>"
+xHTM +="                <BR/>"
+xHTM +="                </FONT>"
+xHTM +="			</TH> "
+xHTM +='			<TH ALIGN="center" BGCOLOR="#FFFFFF">'
+xHTM +='				<FONT  SIZE="5" COLOR="#005151" FACE="verdana, arial, helvetica, times" >'
+xHTM +="			</TH>"
+xHTM +="		</TR>"
+xHTM +="		<TR>"
+xHTM +='        	<TD align="left" BGCOLOR="#FFFFFF"> '
+xHTM +='            	<FONT  SIZE="3" COLOR="#005151" FACE="verdana, arial, helvetica, times" > '
+xHTM +="                <br/> "
+xHTM +="				"+Alltrim(cAviso)+" "+dtoc(date())+"  "+time()+" "
+xHTM +="                <br/> "
+xHTM +="				O pedido em referencia foi "+cMSGAprov+" "
+xHTM +="                <br/>"
+xHTM +="                "+iif(!Empty(cJusti),"Motivo: "+cJusti,"")+" "
+xHTM +="                <br/>"
+xHTM +="				Data "+DTOC(date())+" Hora:"+time()+" "
+xHTM +="                <br/>"
+xHTM +="                Responsﬂvel "+UsrRetName(cCodLiber)+" "
+xHTM +="                <br/>"
+xHTM +="                </FONT>"
+xHTM +="			</TD> "
+xHTM +="		</TR> "
+xHTM +="	</TABLE>"
+xHTM +="	<br />"
+xHTM +="	<hr width=100% />"
+xHTM +="	<table WIDTH=100%>"
+xHTM +="		<tr>"
+xHTM +="			<th height=30>"
+xHTM +="			</th>"
+xHTM +="		</tr>"
+xHTM +="		<tr>"
+xHTM +='			<TD align="center" BGCOLOR="#FFFFFF">'
+xHTM +='            	<FONT  SIZE="-1" COLOR="#005151" FACE="verdana, arial, helvetica, times" >'
+xHTM +="				Workflow "
+xHTM +="				</FONT>"
+xHTM +="			</td>"
+xHTM +="		</tr>"
+xHTM +="	</table>"
+xHTM +="<body>"
+xHTM +="</body>"
+xHTM +="</html>"
+
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" FIM xHTM ", 0, (nStart - Seconds()), {})
+
+dbSelectArea("SCR")
+SCR->(dbSetOrder(2))
+SCR->(dbgotop())
+SCR->(dbSeek(cxFilial+cTipo+cNum))
+While !SCR->(EOF()) .AND.   cxFilial = SCR->CR_FILIAL .and.  SCR->CR_NUM = cNum
+
+    FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" while cxFilial=SCR->CR_FILIAL .and. SCR->CR_NUM = cNum", 0, (nStart - Seconds()), {})
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Valores de cCodLiber: "+alltrim(cCodLiber)+" cNivelApr: "+alltrim(cNivelApr), 0, (nStart - Seconds()), {})
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Preparando para Entrarno Codigo Nivel = o Nivel para enviar todos do mesmo Nivel"+SCR->CR_USER+"<>"+cCodLiber +".and."+ cNivelApr +"="+ SCR->CR_NIVEL, 0, (nStart - Seconds()), {})
+
+ 	cDestino := UsrRetMail(SCR->CR_USER)
+    cDestino := UsrRetMail(cGerentCom)
+
+
+	if SCR->CR_USER <> cCodLiber .And.  cNivelApr = SCR->CR_NIVEL
+
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","Entrou no Envio de E-mail para o Mesmo Nivel 	if SCR->CR_USER<>cCodLiber .and. cNivelApr = SCR->CR_NIVEL //Avisa o mesmo n›vel", 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Entrou no if SCR->CR_USER<>cCodLiber .and. cNivelApr=SCR->CR_NIVEL //Avisa o mesmo n›vel", 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Enviando o E-mail sem ser Nivel 01", 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Enviando E-MAIL PARA  "+UsrRetMail(SCR->CR_USER), 0, (nStart - Seconds()), {})
+
+		u_EnviEmail("","Aviso"+cAviso+"","Aviso : "+cAviso+"",xHTM, .t. ,cDestino,cCopia)
+
+	EndIf
+
+	if SCR->CR_USER = cCodLiber
+
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Enviando Email para o Mesmo Usuario que Aprovou o Pedido de Compras", 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Entrou no if SCR->CR_USER<>cCodLiber .and. cNivelApr=SCR->CR_NIVEL //Avisa o Mesmo Usuario )", 0, (nStart - Seconds()), {})
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Enviando E-MAIL PARA  "+Alltrim(cDestino), 0, (nStart - Seconds()), {})
+
+		u_EnviEmail("","Aviso"+cAviso+"","Aviso : "+cAviso+"",xHTM, .t. ,cDestino,cCopia)
+
+	EndIf
+
+
+
+	if nOpc = 3 .AND.  SCR->CR_USERLIB <> " " .AND.   SCR->CR_LIBAPRO <>  " " .AND.  SCR->CR_APROV = SCR->CR_LIBAPRO
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Enviando Email para todos os Aprovadores Caso o pedido seja Rejeitado", 0, (nStart - Seconds()), {})
+		u_EnviEmail("","Aviso"+cAviso+"","Aviso : "+cAviso+"",xHTM, .t. ,cDestino,cCopia)
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Enviando Email para todos os Aprovadores Caso o pedido seja Rejeitado", 0, (nStart - Seconds()), {})
+	EndIf
+
+	if xLReprova
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Enviando Email para todos os Aprovadores Caso o pedido seja Rejeitado", 0, (nStart - Seconds()), {})
+		u_EnviEmail("","Aviso"+cAviso+"","Aviso : "+cAviso+"",xHTM, .t. ,cDestino,cCopia)
+		FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Enviando Email para todos os Aprovadores Caso o pedido seja Rejeitado", 0, (nStart - Seconds()), {})
+	EndIf
+
+	SCR->(dbskip())
+Enddo
+
+
+
+if lLiberou .or.  nOpc = 3
+
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Avisando o Comprador", 0, (nStart - Seconds()), {})
+	cDestino := UsrRetMail(cPCUser)+";"+UsrRetMail(cGerentCom)
+
+
+
+	u_EnviEmail("","Aviso"+cAviso+"","Aviso : "+cAviso+"",xHTM, .t. ,cDestino,cCopia)
+
+EndIf
+
+if xLReprova
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" Avisando o Comprador", 0, (nStart - Seconds()), {})
+	cDestino := UsrRetMail(cPCUser)+";"+UsrRetMail(cGerentCom)
+
+
+
+	u_EnviEmail("","Aviso"+cAviso+"","Aviso : "+cAviso+"",xHTM, .t. ,cDestino,cCopia)
+
+EndIf
+
+Return()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Static Function SPCIniciar( oProcess ,cNivelUser )
+Local aCond:={},nTotal := _nXF := 0
+Local cAssunto
+Local cHTML 	  	:= AllTrim( "/workflow/")
+Local cIMAGE	  	:= AllTrim( WFGetMV("MV_WFIMG","/web/ruasag_teste_wf/images/") )
+Local cHttpServer 	:= "http://" + AllTrim("10.106.10.20" ) + "/"
+Local cAviso 		:= ""
+Local cDestino 		:= ""
+Local cLink 		:= ""
+Local xHTM 			:= ""
+Local cMailID 		:= ""
+Local i         	:= 0
+Local cTipo			:= "PC"
+Local Nz 			:= 0
+
+
+cAssunto:= "Solicitaö?o de Aprovacao de Pedido de Compra - Pedido No "+SC7->C7_NUM
+
+oProcess:NewTask( "Solicitaö?o", cHTML+"wfw120pv.htm" )
+oProcess:cSubject := cAssunto
+oProcess:bReturn  := "U_WFW120P( 1 )"
+
+
+
+
+oHTML := oProcess:oHTML
+
+
+
+
+oHtml:ValByName( "EMISSAO", SC7->C7_EMISSAO )
+oHtml:ValByName( "FORNECEDOR", SC7->C7_FORNECE )
+
+dbSelectArea("SA2")
+SA2->( dbSetOrder(1) )
+SA2->( dbSeek(xFilial("SA2")+SC7->C7_FORNECE+SC7->C7_LOJA) )
+
+oHtml:ValByName( "lb_nome", Posicione("SA2",1,xFilial("SA2")+SC7->C7_FORNECE+SC7->C7_LOJA,"A2_NOME") )
+oHtml:ValByName( "lb_cond", Posicione("SE4",1,xFilial("SE4")+SC7->C7_COND,"E4_DESCRI") )
+oHtml:ValByName( "lb_comprador", UsrRetName(SC7->C7_USER) )
+oHtml:ValByName( "lb_observacao", SC7->C7_XOBS )
+
+dbSelectArea("SC7")
+cxFilial := SC7->C7_FILIAL
+cNum 	 := SC7->C7_NUM
+
+oHtml:ValByName( "EMPRESA_FILIAL", cNameEmp+" - Filial - "+ SM0->M0_CODFIL )
+oHtml:ValByName( "NOME_EMPFIL", cNameEmp )
+oHtml:ValByName( "FILIAL", SC7->C7_FILIAL )
+oHtml:ValByName( "PEDIDO", SC7->C7_NUM )
+
+oProcess:fDesc := "Pedido de Compras No "+ cNum
+
+DbSelectArea("SC7")
+SC7->(dbGoTop())
+SC7->(dbSetOrder(1))
+IF SC7->(dbSeek(cxFilial+cNum))
+Else
+	Alert("Atenö?o !!! Comprador , Verifique o Centro de Custo do Pedido de Compras !!!")
+	Return( .F. )
+EndIf
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+nHist:= 0
+FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+" WHILE NO HISTORICO", 0, (nStart - Seconds()), {})
+
+
+
+DbSelectArea("SCR")
+SCR->(dbSetOrder(1))
+SCR->(dbgotop())
+if SCR->(dbSeek(cxFilial+cTipo+cNum))
+	While !SCR->(EOF()) .AND.  Alltrim(cxFilial) == Alltrim(SCR->CR_FILIAL) .AND.  Alltrim(cNum) == Alltrim(SCR->CR_NUM)
+
+		IF  ( SCR->CR_USERLIB <> "  " .and.   SCR->CR_LIBAPRO <>  "  " .and.  SCR->CR_APROV = SCR->CR_LIBAPRO )
+
+			cNomeUsu := UsrRetName(SCR->CR_USERLIB)
+
+			AAdd( (oHtml:ValByName( "histori.item" ))		, SCR->CR_NIVEL  )
+			AAdd( (oHtml:ValByName( "histori.usuario" ))	, SCR->CR_USER  )
+			AAdd( (oHtml:ValByName( "histori.nomeuse" ))	, cNomeUsu)
+			AAdd( (oHtml:ValByName( "histori.status" ))		, IIF(SCR->CR_STATUS== "03","APROVADO","REPROVADO")  )
+			AAdd( (oHtml:ValByName( "histori.aprov" ))		, SCR->CR_APROV )
+			AAdd( (oHtml:ValByName( "histori.datalib" ))	, DTOC(SCR->CR_DATALIB) )
+			AAdd( (oHtml:ValByName( "histori.observ" ))		, Alltrim(SCR->CR_OBS) )
+
+			nHist++
+		EndIf
+
+		SCR->(Dbskip())
+	Enddo
+EndIf
+
+IF Len(aTempAprov) > 0
+
+	For Nz:=1 to Len(aTempAprov)
+
+		AAdd( (oHtml:ValByName( "histori.item" )), 		aTempAprov[Nz][1]  )
+		AAdd( (oHtml:ValByName( "histori.usuario" )), 	aTempAprov[Nz][2]  )
+		AAdd( (oHtml:ValByName( "histori.nomeuse" )),	aTempAprov[Nz][3]  )
+		AAdd( (oHtml:ValByName( "histori.status" )),  	aTempAprov[Nz][4]  )
+		AAdd( (oHtml:ValByName( "histori.aprov")),		aTempAprov[Nz][5]  )
+		AAdd( (oHtml:ValByName( "histori.datalib" )), 	aTempAprov[Nz][6]  )
+		AAdd( (oHtml:ValByName( "histori.observ" )), 	aTempAprov[Nz][7]  )
+
+		nHist++
+
+	next
+
+EndIf
+
+IF nHist = 0
+
+	AAdd( (oHtml:ValByName( "histori.item" )), "   "  )
+	AAdd( (oHtml:ValByName( "histori.usuario" )), "	"  )
+	AAdd( (oHtml:ValByName( "histori.nomeuse" )),"	" )
+	AAdd( (oHtml:ValByName( "histori.status" )),  " "  )
+	AAdd( (oHtml:ValByName( "histori.aprov")),"	" )
+	AAdd( (oHtml:ValByName( "histori.datalib" )), "	" )
+	AAdd( (oHtml:ValByName( "histori.observ" )), "	" )
+
+EndIf
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+aUltPrc	:= {0,0,0}
+
+If Select("QryScr") > 0
+	QryScr->(dbCloseArea())
+EndIf
+
+dbSelectArea("SC7")
+SC7->( dbSetOrder(1) )
+SC7->( dbSeek(cxFilial+cNum) )
+    While !SC7->( Eof() ) .and.  SC7->C7_FILIAL+SC7->C7_NUM = cxFilial+cNum
+
+
+ 	   nTotal 	  := nTotal + C7_TOTAL
+
+ 	   cGrpAprova := SC7->C7_APROV
+       cAnexoWF   := Alltrim(SC7->C7_XOBSFLU)
+
+       dbSelectArea("SB1")
+       SB1->( dbSetOrder(1) )
+       SB1->( dbSeek(xFilial("SB1")+SC7->C7_PRODUTO) )
+
+       AAdd( (oHtml:ValByName( "produto.item" )),SC7->C7_ITEM )
+       AAdd( (oHtml:ValByName( "produto.codigo" )),SC7->C7_PRODUTO )
+       AAdd( (oHtml:ValByName( "produto.ccusto" )),SC7->C7_CC )
+       AAdd( (oHtml:ValByName( "produto.itemcta" )),SC7->C7_ITEMCTA )
+       AAdd( (oHtml:ValByName( "produto.descricao" )),Posicione("SB1",1,xFilial("SB1")+SC7->C7_PRODUTO,"B1_DESC") )
+       AAdd( (oHtml:ValByName( "produto.quant" )),TRANSFORM( SC7->C7_QUANT,"@E 99,999,999.99" ) )
+       AAdd( (oHtml:ValByName( "produto.preco" )),TRANSFORM( SC7->C7_PRECO,"@E 99,999,999.99" ) )
+       AAdd( (oHtml:ValByName( "produto.total" )),TRANSFORM( SC7->C7_TOTAL,"@E 99,999,999.99" ) )
+       AAdd( (oHtml:ValByName( "produto.unid" )) ,SB1->B1_UM )
+
+
+
+
+
+
+
+
+       SC7->(dbSkip())
+    Enddo
+
+    oHtml:ValByName( "lbValor" ,TRANSFORM( nTotal,"@E 99,999,999.99" ) )
+
+    oHtml:ValByName( "lbTotal" ,TRANSFORM( nTotal,"@E 99,999,999.99" ) )
+
+
+
+
+if !lEnvAnexo
+	cAnexoWF := " "
+Else
+EndIf
+
+aMail:={}
+
+dbSelectArea("SCR")
+SCR->(dbgotop())
+SCR->(dbSetOrder(2))
+if SCR->(dbSeek(xFilial("SCR")+"PC"+ALLTRIM(cNum)))
+	While !SCR->(EOF()) .AND.  Alltrim(cxFilial) == Alltrim(SCR->CR_FILIAL) .AND.  Alltrim(cNum) == Alltrim(SCR->CR_NUM)
+
+		if Empty(SCR->CR_DATALIB) .OR.  ( !Empty(SCR->CR_DATALIB) .AND.  SCR->CR_STATUS = "04"  )
+
+			FwLogMsg("ACOMP003", , "ACOMP003", FunName(), "","Compara"+ SUBSTR(alltrim(cxFilial),1,2)+" com "+SUBSTR(alltrim(SCR->CR_FILIAL),1,2), 0, (nStart - Seconds()), {})
+
+			If  Alltrim(cxFilial) == Alltrim(SCR->CR_FILIAL) .AND.  alltrim(cNum) == Alltrim(SCR->CR_NUM)
+
+				if SCR->CR_NIVEL = cNivelUser
+
+					if !Empty(UsrRetMail(SCR->CR_USER))
+						aadd(aMail,{UsrRetName(SCR->CR_USER),UsrRetMail(SCR->CR_USER),SCR->CR_USER})
+						oHtml:ValByName("lb_aprovado",SCR->CR_USER )
+						oHtml:ValByName("usr",SCR->CR_USER )
+					Else
+						Aviso("Aviso","Email n?o cadastrado para o usuﬂrio >> "+UsrRetName(SCR->CR_USER),{"Ok"},1)
+					Endif
+
+				Endif
+			EndIf
+		EndIf
+		SCR->(dbskip())
+	Enddo
+Else
+	FwLogMsg("ACOMP003", , "ACOMP003", FunName(), ""," ( WF APROVA??O) Data: "+dtoc(ddatabase)+ "Hora: "+time()+"Este pedido n?o existe SCR (Aprovadores)", 0, (nStart - Seconds()), {})
+Endif
+
+oProcess:cTo :=  "pedcom"
+
+if len(aMail)>0
+
+	cMailID := oProcess:Start()
+
+
+	for i:=1 to len(aMail)
+
+		cAviso	  := "Solicitaö?o de Aprovacao de Pedido de Compra - Pedido No "+oProcess:oHtml:RetByName("Pedido")+" - Empresa "+cNameEmp+" - Filial "+cxFilial
+		cDestino  := aMail[i,2]
+		cLink	  := "http://10.106.10.20:9090" + "/messenger/"+"emp" + SM0->M0_CODIGO + "/pedcom/" + cMailID + ".htm"
+
+
+
+		texto1    := "Voc? estﬂ recebendo um Link de aprovacao de Pedido de Compra - Pedido No "+oProcess:oHtml:RetByName("Pedido")+" - Empresa "+cNameEmp+" - Filial "+cxFilial+" em "+dtoc(date())+"&nbsp;&nbsp;&nbsp;"+time()+"."
+
+		If !Empty(_cAltera)
+			texto2    := "Motivo Alteraö?o : "+_cAltera+"."
+		EndIf
+
+		if !Empty(cObse)
+			texto3    := ""+cObse+""
+		EndIf
+
+		texto4    := "O processo aguarda sua resposta."
+
+		xHTM :='<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"> '
+		xHTM +='<html xmlns="http://www.w3.org/1999/xhtml"> '
+		xHTM +="<head>"
+		xHTM +='	<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" /> '
+		xHTM +="	<title>"+cAviso+"</title>"
+		xHTM +="</head>"
+		xHTM +='<body bgcolor="#FFFFFF"> '
+		xHTM +="	<TABLE WIDTH=100%>"
+		xHTM +="		<TR>"
+		xHTM +='			<TH ALIGN="right" BGCOLOR="#FFFFFF">'
+		xHTM +='				<FONT  SIZE="5" COLOR="#FFFFFF" FACE="verdana, arial, helvetica, times" >'
+		xHTM +='  				<img id="_x0000_i1025" src="http://avancoresources.com/wp-content/uploads/AvancoLogo.png" border="0" width="263" height="123"></span></b></td>'
+		xHTM +="			</TH>"
+		xHTM +="		</TR>"
+		xHTM +="	</TABLE>"
+		xHTM +="	<TABLE WIDTH=100%>"
+		xHTM +="		<TR>"
+		xHTM +='			<TH ALIGN="Center" BGCOLOR="#FFFFFF"> '
+		xHTM +='				<FONT  SIZE="5" COLOR="#005151" FACE="verdana, arial, helvetica, times" >'
+		xHTM +="                <BR/>"
+		xHTM +="                "+cAviso+" "
+		xHTM +="                <BR/>"
+		xHTM +="                <BR/>"
+		xHTM +="                </FONT>"
+		xHTM +="			</TH> "
+		xHTM +="		</TR>"
+		xHTM +="		<TR>"
+		xHTM +='        	<TD align="left" BGCOLOR="#FFFFFF"> '
+		xHTM +='            	<FONT  SIZE="3" COLOR="#005151" FACE="verdana, arial, helvetica, times" > '
+		xHTM +="                <br/> "
+		xHTM +="                Prezado(a):"+capital(aMail[i,1])+" "
+		xHTM +="                <br/>"
+		xHTM +="                "+texto1+""
+		xHTM +="                <br/>"
+		xHTM +="                "+texto2+""
+		xHTM +="                <br/>"
+		xHTM +="                "+texto3+""
+		xHTM +="                <br/>"
+		xHTM +="                "+texto4+""
+		xHTM +="                <br/>"
+		xHTM +="                </FONT>"
+		xHTM +="			</TD> "
+		xHTM +="		</TR> "
+		xHTM +="	</TABLE>"
+		xHTM +="	<br />"
+		xHTM +="	<TABLE WIDTH=100%>"
+		xHTM +="		<TR> "
+		xHTM +="		  <td>"
+		xHTM +='			  <FONT  SIZE="-1" COLOR="#000000" FACE="verdana, arial, helvetica, times" >&nbsp;</FONT>'
+		xHTM +='			  <p><font color="#005151" size="-1" face="verdana, arial, helvetica, times">Clique <a href="'+cLink+"?user="+aMail[i,3]+'">aqui</a> para aprovar o pedido de compra. </font></p>'
+		xHTM +="		  </td>"
+		xHTM +="		</TR>"
+
+
+
+
+
+
+
+
+
+		xHTM +="	<hr width=100% />"
+		xHTM +="	<table WIDTH=100%>"
+		xHTM +="		<tr>"
+		xHTM +="			<th height=30>"
+		xHTM +="			</th>"
+		xHTM +="		</tr>"
+		xHTM +="		<tr>"
+		xHTM +='			<TD align="center" BGCOLOR="#FFFFFF">'
+		xHTM +='            	<FONT  SIZE="-1" COLOR="#005151" FACE="verdana, arial, helvetica, times" >'
+		xHTM +="				Workflow "
+		xHTM +="				</FONT>"
+		xHTM +="			</td>"
+		xHTM +="		</tr>"
+		xHTM +="	</table>"
+		xHTM +="<body>"
+		xHTM +="</body>"
+		xHTM +="</html>"
+
+
+
+		cOkWF := u_EnviEmail(cAnexoWF,"Aviso"+cAviso+"","Aviso : "+cAviso+"",xHTM, .t. ,cDestino,cCopia)
+
+		cCdUserMail+= aMail[i,3]+";"
+
+	next
+Endif
+
+if len(aMail)>0
+
+
+
+	cQuery := "  UPDATE  "+RetSqlName("SC7")+" "
+	cQuery += "  SET  C7_XWFID  = '" +cMailID+ "' , C7_XWFMAIL  = '" +cCdUserMail+ "'  "
+	cQuery += "  WHERE D_E_L_E_T_ = ' ' "
+	cQuery += "  AND C7_FILIAL  =  '" +cxFilial+ "' "
+	cQuery += "  AND C7_NUM  =  '" +cNum+ "' "
+
+	Begin Sequence; BeginTran()
+	TcSqlExec(cQuery)
+	EndTran(); end
+
+EndIf
+
+Return()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Static Function SPCTimeOut( oProcess )
+cAviso:="NOTIFICA??O - Aprovaö?o de Pedido de Compra PENDENTE - Pedido No "+oProcess:oHtml:RetByName("Pedido")
+cDestino:=UsrRetMail(WFCodUser("BI"))
+
+xHTM := "<HTML><BODY>"
+xHTM += "<hr>"
+xHTM += '<p  style="word-spacing: 0; line-height: 100%; margin-top: 0; margin-bottom: 0">'
+xHTM += '<b><font face="Verdana" SIZE=3>'+cAviso+" &nbsp; "+dtoc(date())+"&nbsp;&nbsp;&nbsp;"+time()+"</b></p>"
+xHTM += "<hr>"
+xHTM += "<br>"
+xHTM += "<br>"
+xHTM += "O pedido em referencia ainda n?o foi respondido <BR> <br>"
+xHTM += "</BODY></HTML>"
+ExxNVIAREMAIL("","Aviso - "+cAviso+"","Aviso - "+cAviso+"",xHTM, .t. ,cDestino)
+Return()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Function U_UltPrc(cCod)
+Local aArea		:= GetArea()
+Local aRet		:= {0,0,0}
+Local cAlias	:= GetNextAlias()
+
+
+
+
+
+
+
+
+__execSql(cAlias," SELECT DISTINCT D1_FILIAL, D1_COD, D1_DOC, D1_SERIE, D1_DTDIGIT, D1_VUNIT, D1_QUANT, D1_UM FROM  "+RetSqlName('SD1')+" SD1 WHERE SD1.D_E_L_E_T_ = ' ' AND SD1.D1_COD =  "+___SQLGetValue(CCOD)+" AND SD1.D1_TIPO = 'N' ORDER BY D1_DTDIGIT DESC",{},.F.)
+
+_aQuery := GetLastQuery()
+MemoWrite("C:\temp\wfw120p_ult_prc.txt",_aQuery[2])
+If (cAlias)->(!EOF())
+	_N := 1
+	While (cAlias)->(!EOF()) .AND.  _N < 4
+		aRet[_N] := "R$ "+alltrim(str((cAlias)->D1_VUNIT))+" - "+alltrim(str((cAlias)->D1_QUANT))+alltrim((cAlias)->D1_UM)
+		_N++
+		(cAlias)->(dbSkip())
+	EndDo
+EndIf
+
+RestArea(aArea)
+Return aRet
