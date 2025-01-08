@@ -1,0 +1,714 @@
+#include "totvs.ch"
+#include "tbiconn.ch"
+#include "ozminerals.ch"
+
+namespace libOZminerals
+
+#define USER_SEEK_LOGIN		02
+
+#define USER_NAME			02
+#define USER_DEPT			12
+#define USER_JOB_ROLE		13
+
+Static __aCodUsers
+Static __aLoginUsers
+
+/*/{Protheus.doc} checkUserInJOB
+
+	Verifica se a conexão do Login e Senha do Usuário são válidas em um Ambiente de JOB
+
+@type function
+@author Fabio Santos - CRM Service
+@since 08/10/2023
+@version P12
+@database SQL SERVER 
+
+@obs
+	Executa internamente a preparação do Ambiente com Empresa e Filial Apenas para validar usuário e senha
+	Utiliza StartJOB e Tratamento de Erro Fatal
+
+@sample	
+	lRet := libOzminerals.u_checkUserInJOB(cCodEmp,cCodFil,cLogin,cPass,@cMsg)
+
+@nested-tags:Frameworks/OZminerals
+/*/
+User Function checkUserInJOB(cCodEmp,cCodFil,cLogin,cPass,cMsg,cCodUser)
+	Local bError		:= {|| }
+	Local cError		:= ""
+	Local cLog			:= ""
+	Local nFind			:= 0
+	Local lRet			:= .F.
+	
+	If !( isInJob() )
+		cMsg := "Rotina só pode ser executada em ambiente JOB."
+		showLogInConsole(cMsg)
+		Return .F.
+	Endif
+	
+	Begin Sequence
+	
+		cError	:= ""	
+		bError 	:= ErrorBlock({|oError| getErrorBlock(oError,@cError) } )
+	
+		If ( __aLoginUsers <> Nil )
+			
+			nFind := aScan( __aLoginUsers, {|Record| Record[01] == cLogin .And. Record[02] == cPass })
+			
+			If ( nFind > 0 )
+				lRet := __aLoginUsers[nFind,03]
+				
+				If ( lRet )				
+					cLog := "Logon do Usuário realizado previamente"
+					showLogInConsole(cLog)
+				
+					Return lRet
+				EndIf
+			EndIf
+		EndIf
+	
+		cLog 	:= "Verificando usuário e senha para execução do JOB..."
+		showLogInConsole(cLog)
+
+		If ( !Empty(cCodEmp) .And. !Empty(cCodFil) )
+			lRet := StartJob( "libOzminerals.u_checkUserStartJOB", GetEnvServer(), .T., cCodEmp, cCodFil, cLogin, cPass, @cCodUser )
+
+			If ( __aLoginUsers == Nil )
+				__aLoginUsers := {}
+			EndIf			
+			aAdd( __aLoginUsers, {cLogin, cPass, lRet} )
+		Else
+			cMsg := "Empresa ou Filial Não Informado. Informe uma Empresa/Filial válida."
+			showLogInConsole(cMsg)
+		Endif
+		
+	End Sequence
+	
+	ErrorBlock(bError)
+
+	If ( !Empty(cError) )
+		If ( !Empty(cMsg) )
+			cMsg += CRLF
+		Endif
+		cMsg += cError
+		lRet := .F.
+	Endif
+	
+	showLogInConsole(cMsg)	
+	
+Return lRet
+
+/*
+	Executa a Verificação de usuário em outra Thread em JOB
+	Tenta Busca Licença Light (FAT), antes da Full
+*/
+User Function checkUserStartJOB(cCodEmp,cCodFil,cLogin,cPass,cCodUser,cModulo)
+	Local nTypeLogin	:= 2
+	Local aData			:= {}	
+	Local lRet 			:= .F.
+	
+	Default cModulo 	:= "FAT"
+	
+	prepareEnvironment(cCodEmp,cCodFil,cCodUser,cModulo)
+
+	If ( libOzminerals.u_posValidConfigJOB() )
+
+		If !Empty(cLogin)
+			PswOrder(nTypeLogin)
+			If ( PswSeek(cLogin,.T.) )
+								  
+				cCodUser	:= libOzminerals.u_getUserCode(cLogin)
+								  
+				aData 		:= PswRet()
+				
+				If !( AllTrim(cLogin) $ AllTrim(aData[01,02]) )
+					cMsg := "Login de Conexão do Usuário no Protheus Inválido"
+					showLogInConsole(cMsg)
+					Return .F.
+				Endif 
+					
+				If !( PswName(cPass) )
+					cMsg := "Senha de Conexão do Usuário '" + cLogin + "' do Protheus Inválida"
+					showLogInConsole(cMsg)
+					Return .F.
+				Endif
+				
+				lRet := .T.
+			Endif
+		Else
+			cMsg := "Login de Conexão do Usuário Não Informado"
+			showLogInConsole(cMsg)
+		Endif
+
+	Endif
+
+	resetEnvironment()
+
+Return lRet
+
+/*/{Protheus.doc} getUserCode
+
+	Função para retornar o Código do Usuário
+	Alternativa a Função WFCodUser(), muita lenta no ambiente 
+
+@type function
+@author Fabio Santos 
+@since 08/10/2023
+@version P12
+@database SQL SERVER 
+
+@param cUserName, character, Login do Usuário
+
+@return character, cCodUser - Código do Usuário
+
+@obs
+	Utiliza StartJOB e Tratamento de Erro Fatal
+
+@sample	
+	cCodUser := libOzminerals.u_getUserCode(cUserName)
+
+@see IpUsersObject
+
+@nested-tags:Frameworks/OZminerals
+/*/
+User Function getUserCode(cUserLogin) as character
+	Local bError			:= {|| }	as codeblock	
+	Local cError			:= ""		as character
+	Local nFind				:= 0		as numeric
+	Local cMsg				:= ""		as character
+	Local cLog				:= ""		as character
+	Local cCodUser		 	:= ""		as character
+
+	Begin Sequence
+	
+		If ( !Empty(cUserLogin) )
+		
+			If ( __aCodUsers <> Nil )
+
+				nFind := aScan( __aCodUsers, {|Record| Record[01] == cUserLogin })
+				
+				If ( nFind > 0 )
+					cCodUser := __aCodUsers[nFind,02]
+					
+					cLog 	 := "Código do usuário Recuperado: " + cCodUser
+					showLogInConsole(cLog)
+					
+					Return cCodUser
+				EndIf
+			EndIf
+		
+			cError	:= ""
+			bError 	:= ErrorBlock({|oError| getErrorBlock(oError,@cError) } )	
+		
+			cLog 	:= "Recuperando Código do usuário '" + cUserLogin + "' pelo Login..."
+			showLogInConsole(cLog)
+
+			cCodUser := getUserJOBInFile(cUserLogin)
+
+			If ( Empty(cCodUser) )
+				If ( Select("SX6") > 0 )
+					cCodUser := libOzminerals.u_getUserCodeInProtheus(cUserLogin)
+				Else
+					cCodUser := StartJob("libOzminerals.u_getUserCodeStartJOB", GetEnvServer(), .T., cUserLogin)
+				EndIf
+			EndIf
+			
+			If ( !Empty(cCodUser) )
+				cLog 	:= "Código do usuário Recuperado: " + AllToChar(cCodUser)
+				showLogInConsole(cLog)
+			EndIf
+			
+			If ( __aCodUsers == Nil )
+				__aCodUsers := {}
+			EndIf			
+			aAdd( __aCodUsers, {cUserLogin, cCodUser} )
+		EndIf
+		
+	End Sequence
+	
+	ErrorBlock(bError)
+
+	If ( !Empty(cError) )
+		If ( !Empty(cMsg) )
+			cMsg += CRLF
+		Endif
+		cMsg += cError
+		lRet := .F.
+	Endif
+	
+	showLogInConsole(cMsg)
+	
+Return cCodUser
+
+/*
+	Recupera o Usuário do JOB em Arquivo no FileSystem
+	Objetivo: Obter Performance - Obter a informação sem fazer Prepare Environment
+	Conteúdo do Arquivo:
+	cUserLogin;cCodUser
+	cUserLogin;cCodUser
+*/
+Static Function getUserJOBInFile(cUserLogin)
+	Local cFileUserJob	:= "\system\job_user.txt"	
+	Local cContent		:= ""
+	Local aContent		:= {}
+	Local nParam		:= 0
+	Local nFind			:= 0
+	Local cCodUser 		:= ""
+	
+	If ( File(cFileUserJob ) )
+		
+		cContent := MemoRead(cFileUserJob)
+		aContent := StrTokArr2(cContent,CRLF)
+		For nParam:=1 to Len(aContent)
+			aContent[nParam] := StrTokArr2(aContent[nParam],";")
+		Next nParam
+		
+		nFind := aScan(aContent, {|Record| Upper(AllTrim(Record[01])) == Upper(AllTrim(cUserLogin)) } )
+		If ( nFind > 0 )
+			cCodUser := AllTrim(aContent[nFind,02])
+		EndIf
+	EndIf
+	
+Return cCodUser
+
+/*
+	Busca o Código do Usuário em JOB em uma nova Thread
+*/
+User Function getUserCodeStartJOB(cUserLogin) as character
+	Local oIpUsersObject 	:= Nil	as object
+	Local cCodUser			:= ""	as character
+
+	If ( !Empty(cUserLogin) )
+		prepareEnvironment()
+		
+		If ( libOzminerals.u_posValidConfigJOB() )
+			oIpUsersObject	:= IpUsersObject():newIpUsersObject()
+			cCodUser 		:= oIpUsersObject:getUserCode(cUserLogin)
+			freeObj(oIpUsersObject)
+		EndIf
+		
+		resetEnvironment()
+	EndIf
+	
+Return cCodUser
+
+/*
+	Busca o Código do Usuário em JOB em uma nova Thread
+*/
+User Function getUserCodeInProtheus(cUserLogin) as character
+	Local oIpUsersObject 	:= Nil	as object
+	Local cCodUser			:= ""	as character
+
+	If ( !Empty(cUserLogin) )		
+		If ( libOzminerals.u_posValidConfigJOB() )
+			oIpUsersObject	:= IpUsersObject():newIpUsersObject()
+			cCodUser 		:= oIpUsersObject:getUserCode(cUserLogin)
+			freeObj(oIpUsersObject)
+		EndIf		
+	EndIf
+	
+Return cCodUser
+
+/*/{Protheus.doc} getUserLogin
+
+	Função para retornar o Login do Usuário
+
+@type function
+@author Fabio Santos 
+@since 08/10/2023
+@version P12
+@database SQL SERVER 
+
+@param cCodUser, character, Código do Usuário
+@param [lPrepareEnvironment], logical, Indica se deseja preparar/limpar o ambiente se necessário - Padrão: .T.
+
+@return character, cUserLogin - Login do Usuário
+
+@sample	
+	cUserLogin := libOzminerals.u_getUserLogin(cCodUser)
+	
+@see PswChave
+
+@nested-tags:Frameworks/OZminerals
+/*/
+User Function getUserLogin(cCodUser, lPrepareEnvironment)
+	Local cUserLogin := ""
+	
+	Default lPrepareEnvironment := .F.
+
+	If ( lPrepareEnvironment )
+		prepareEnvironment()
+	EndIf
+
+	If ( libOzminerals.u_posValidConfigJOB() )
+		cUserLogin := PswChave(cCodUser)
+	EndIf
+	
+	If ( lPrepareEnvironment )
+		resetEnvironment()
+	EndIf
+	
+Return
+
+/*/{Protheus.doc} getDeptUser
+
+	Recupera o Setor do Usuário Atual
+
+@type function
+@author Fabio Santos 
+@since 08/10/2023
+@version P12
+@database SQL SERVER 
+
+@param cLogin, character, Login do Usuário
+@param [lPrepareEnvironment], logical, Indica se deseja preparar/limpar o ambiente se necessário - Padrão: .T.
+
+@return character, cDeptUser - Departamento do Usuário
+
+@sample	
+	cDeptUser := libOzminerals.u_getDeptUser(cLogin)
+	
+@see PswRet
+
+@nested-tags:Frameworks/OZminerals
+/*/
+User Function getDeptUser(cLogin, lPrepareEnvironment) as character
+	Local aData					:= {}	as array
+	Local cDeptUser 			:= ""	as character
+
+	Default lPrepareEnvironment := .F.
+
+	If ( lPrepareEnvironment )
+		prepareEnvironment()
+	EndIf
+	
+	If ( libOzminerals.u_posValidConfigJOB() )
+		PswOrder(USER_SEEK_LOGIN)
+		If ( PswSeek(cLogin,.T.) )
+			aData 		:= PswRet()
+			cDeptUser 	:= aData[01,USER_DEPT]
+		Endif
+	EndIf
+	
+	If ( lPrepareEnvironment )
+		resetEnvironment()
+	EndIf
+	
+Return cDeptUser
+
+/*/{Protheus.doc} getUserJOBRole
+
+	Recupera o Cargo do Usuário Atual
+
+@type function
+@author Fabio Santos 
+@since 08/10/2023
+@version P12
+@database SQL SERVER 
+
+@param cLogin, character, Login do Usuário
+@param [lPrepareEnvironment], logical, Indica se deseja preparar/limpar o ambiente se necessário - Padrão: .T.
+
+@return character, cUserJOBRole - Cargo de Trabalho do Usuário
+
+@sample	
+	cUserJOBRole := libOzminerals.u_getUserJOBRole(cUserName)
+	
+@see PswRet
+
+@nested-tags:Frameworks/OZminerals
+/*/
+User Function getUserJOBRole(cLogin, lPrepareEnvironment)
+	Local aData					:= {}	as array
+	Local cUserJOBRole			:= "" 	as character
+
+	Default lPrepareEnvironment	:= .F.
+
+	If ( lPrepareEnvironment )
+		prepareEnvironment()
+	EndIf
+	
+	If ( libOzminerals.u_posValidConfigJOB() )
+		PswOrder(USER_SEEK_LOGIN)
+		If ( PswSeek(cLogin,.T.) )
+			aData 		:= PswRet()
+			cUserJOBRole:= aData[01,USER_JOB_ROLE]
+		Endif
+	EndIf
+	
+	If ( lPrepareEnvironment )
+		resetEnvironment()
+	EndIf
+
+Return cUserJOBRole
+
+/*/{Protheus.doc} getGroupName
+
+	Recupera o nome do grupo do usuário
+
+@type function
+@author Fabio Santos 
+@since 08/10/2023
+@version P12
+@database SQL SERVER 
+
+@param cCodGroup, character, Código do Grupo do Usuário
+@param [lPrepareEnvironment], logical, Indica se deseja preparar/limpar o ambiente se necessário - Padrão: .T.
+
+@return character, cGroupame - Nome do Grupo do Usuário
+
+@sample	
+	cGroupName := libOzminerals.u_getGroupName(cCodGroup)
+	
+@see PswRet
+
+@nested-tags:Frameworks/OZminerals
+/*/
+User Function getGroupName(cCodGroup,lPrepareEnvironment) as character
+	Local cAlias   				:= Alias()
+	Local cSavOrd   			:= IndexOrd()
+	Local cGroupName 			:= Space(15)
+	
+	Default lPrepareEnvironment := .F.
+
+	If ( lPrepareEnvironment )
+		prepareEnvironment()
+	EndIf
+	
+	If ( libOzminerals.u_posValidConfigJOB() )
+		If ( cCodGroup == "******" )
+			cGroupName := "Todos"
+		ElseIf( !Empty(cCodGroup) )
+			cGroupName := GrpRetName(cCodGroup)
+			
+			If ( Empty(cGroupName) )
+				cGroupName := Space(15)
+			EndIf
+		Else
+			cGroupName := Space(15)
+		EndIf
+	EndIf
+	
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+	EndIf
+	If ( !Empty(cSavOrd) )
+		dbSetOrder(cSavOrd)
+	EndIf	
+	
+	If ( lPrepareEnvironment )
+		resetEnvironment()
+	EndIf
+
+Return cGroupName
+
+/*/{Protheus.doc} getUserGroups
+
+	Recupera os Grupos do Usuário informado
+
+@type function
+@author Fabio Santos 
+@since 08/10/2023
+@version P12
+@database SQL SERVER 
+
+@param cLogin, character, Login do Usuário
+@param [lPrepareEnvironment], logical, Indica se deseja preparar/limpar o ambiente se necessário - Padrão: .T.
+
+@return array, aGroups - Vetor com os Grupos do Usuário
+
+@sample	
+	cGroupName := libOzminerals.u_getUserGroups(cLogin)
+	
+@see UsrRetGrp
+
+@nested-tags:Frameworks/OZminerals
+/*/
+User Function getUserGroups(cLogin as character, lPrepareEnvironment as logical) as array
+	Local aGroups 				:= {} as array
+
+	Default lPrepareEnvironment := .F.
+
+	If ( lPrepareEnvironment )
+		prepareEnvironment()
+	EndIf
+
+	aGroups := UsrRetGrp(cLogin)
+
+	If ( lPrepareEnvironment )
+		resetEnvironment()
+	EndIf
+
+Return aGroups
+
+/*/{Protheus.doc} getUserName
+
+	Retorna nome de usuário com base no código enviado por parâmetro,
+	caso não seja informado, retornar usuário logado via váriavel private cUserName
+	caso não se enquandre nas condinções, retornar usuário padrão JOB
+
+@type function
+@author Fabio Santos 
+@since 08/10/2023
+@version P12
+@database SQL SERVER 
+
+@param [cCodUser], character, Código do usuário
+
+@return character, Nome do usuário
+
+@nested-tags:Frameworks/OZminerals
+/*/
+User Function getUserName(cCodUser)
+	Local cNameUser		:= ""
+	
+	Default cCodUser 	:= ""
+
+	If ( !Empty(cCodUser) )
+		cNameUser := UsrRetName(cCodUser)
+	ElseIf ( Type("cUserName") == "C" .And. !Empty(cUserName) )
+		cNameUser := cUserName
+	Else
+		cNameUser := "JOB"
+	EndIf
+	
+Return cNameUser
+
+/*
+	Checa se está sendo executado em JOB
+*/
+Static Function isInJob()
+	Local lRet := .F.
+	
+	lRet := libOzminerals.u_isInJob()
+	
+Return lRet
+
+/*
+	Realiza a preparação do Ambiente
+*/
+Static Function prepareEnvironment(cCodEmp,cCodFil,cCodUser,cModulo)
+
+	libOzminerals.u_prepareEnvironment(cCodEmp,cCodFil,cCodUser,cModulo)
+
+Return
+
+/*
+	Faz o Reset do Ambiente somente se houve a necessidade de preparar o Ambiente anteriormente
+*/
+Static Function resetEnvironment()
+
+	libOzminerals.u_resetEnvironment()
+
+Return
+
+/*
+	Retorna a Mensagem de Error Log Fatal Completa
+	Mas apresenta as Variáveis de Ambiente Separadamente em cErrorEnv (Passar por Referência - Opcional)
+	Usar Função dentro de Bloco de Código encapsulado dentro de um Begin Sequence..End Sequence
+	Vide Função ErrorBlock()
+*/
+Static Function getErrorBlock(oError as object, cError as character, cErrorEnv as character) as character
+	
+	libOzminerals.u_getErrorBlock(oError,@cError,@cErrorEnv)
+	
+Return
+
+/*/{Protheus.doc} getUsersEnvironment
+
+	Retorna os usuários conectados no Ambiente informado
+
+@type function
+@author Fabio Santos 
+@since 08/10/2023
+@version P12
+@database SQL SERVER 
+
+@param [cEnvironment], character, Código do Ambiente que deseja validar. Padrão: Ambiente Atual - GetEnvServer()
+@param [aInfo], array, Array com informações dos usuários. Passar por referência para obter as informações
+@param [lAudit], logical, Indica se ativa a auditoria da Rotina. Padrão: .F.
+@param [lOnlyUsers], logical, Indica para retornar somente o nome dos usuários logados no ambiente. Padrão: .F.
+
+@return numeric, nUsersEnvironment - Número de Usuários no Ambiente
+
+@nested-tags:Frameworks/OZminerals
+/*/
+User Function getUsersEnvironment(cEnvironment,aInfo,lAudit,lOnlyUsers)
+	Local aUserInfo  		:= {}
+	Local cUserEnvironment	:= ""
+	Local cUserLogin		:= ""
+	Local cUserComputer		:= ""
+	Local cUserRoutine		:= ""
+	Local cUserTimeStart	:= ""
+	Local cUserTimeIdle		:= ""
+	Local cUserObs			:= ""	
+	Local aRecord			:= {}
+	Local nPos				:= 0
+	Local nRecord			:= 0
+	Local nUsersEnvironment	:= 0
+
+	Default cEnvironment 	:= Alltrim(Upper(GetEnvServer()))
+	Default lAudit		 	:= .F.
+	Default lOnlyUsers		:= .F.
+
+	aInfo		:= {}
+	aUserInfo 	:= GetUserInfoArray(.F.)
+	
+	For nRecord:=1 to Len(aUserInfo)
+		
+		cUserEnvironment := AllTrim(Upper(aUserInfo[nRecord,06]))
+
+		If ( cEnvironment == cUserEnvironment )
+			
+			cUserLogin		:= aUserInfo[nRecord,01]
+			cUserComputer	:= aUserInfo[nRecord,02]
+			cUserRoutine	:= aUserInfo[nRecord,05]
+			cUserTimeStart	:= aUserInfo[nRecord,08]
+			cUserTimeIdle	:= aUserInfo[nRecord,16] 
+			cUserObs		:= aUserInfo[nRecord,11]
+
+			If !( AllTrim(cUserRoutine) == "SIGAMDI" )
+				nUsersEnvironment++
+			EndIf
+			
+			aRecord := {}
+			
+			If !( lOnlyUsers )
+				aAdd( aRecord, cUserLogin)
+				aAdd( aRecord, cUserComputer )
+				aAdd( aRecord, cUserRoutine )
+				aAdd( aRecord, cUserTimeStart )
+				aAdd( aRecord, cUserTimeIdle )
+				aAdd( aRecord, cUserObs )
+
+				aAdd( aInfo, aRecord )
+			Else
+				nPos := aScan( aInfo , {|Record| Record[01] == cUserLogin }  )
+				If ( nPos > 0 )
+					aInfo[nPos,02] += 1
+				Else
+					aAdd( aRecord, cUserLogin )
+					aAdd( aRecord, 1 )
+					
+					aAdd( aInfo, aRecord )
+				EndIf
+			EndIf			
+		EndIf
+
+	Next nRecord
+
+	If ( lAudit )		
+		VarInfo("Ambiente",cEnvironment)
+		VarInfo("Dados dos Usuários Conectados",aInfo)
+		VarInfo("Usuários Conectados",nUsersEnvironment)
+	EndIf
+
+Return nUsersEnvironment
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,"libOzminerals.u_Users")
+
+Return

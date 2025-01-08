@@ -1,0 +1,921 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+#include "ozminerals.ch"
+
+#define APONTA_TOTAL     "T"
+#define APONTA_PARCIAL   "P"
+
+#define OPCAO_INCLUI      3
+#define OPCAO_ALTERA      4
+#define OPCAO_EXCLUI      5
+
+#define  MANUTENCAO_OS    "OS"
+
+#define  PROCESSANDO      "1"
+
+#define  AGUARDANDO       "1"
+#define  GERADO_SUCESSO   "2"
+#define  NAO_APLICAVEL    "3"
+
+#define  PRODUCAO         "1"
+#define  TRANSFERENCIA    "2"
+#define  BAIXA_REQUISICAO "3"
+#define  VENDA_CPV        "4"
+
+#define  MOV_GERADO       "1"
+#define  MOV_CRIAROP      "2"
+#define  MOV_APONTAROP    "3"
+#define  MOV_TRANSFERIR   "4"
+#define  MOV_BAIXAREQ     "5"
+#define  MOV_PEDVENDA     "6"
+#define  MOV_DOCGERADO    "7"
+
+namespace estoque.Producao.Custeio
+
+/*/{Protheus.doc} ApontaOrdemProducao
+
+	Rotina que é chamada pelo rotina automatica, 
+	Tratamento do Custo em partes dentro do Sistema
+
+@type function
+@author Fabio Santos - CRM Service
+@since 08/12/2023
+@version P12
+@database SQL SERVER 
+
+@see OZGENSQL
+@see OZGEN18
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function ApontaOrdemProducao(cDocumento,cStatus,cAvanco)
+	Local  aSays           := {}  as array
+	Local  aButtons        := {}  as array
+	Local  nOpca           := 0   as numeric
+	Local  nCarrega        := 0   as numeric 
+	Local  lPassaStatus    := .F. as logical 
+	Local  cTitoDlg        := ""  as character
+	Local  cLog            := ""  as character
+	Local  cCheckOp        := ""  as character
+
+	Private cSintaxeRotina  := ""  as character
+	Private	cPermiteFilial  := ""  as character
+	Private	cLiberaEmpresa  := ""  as character
+	Private	cTipoProduto    := ""  as character
+
+	cPermiteFilial          := AllTrim(GetNewPar("OZ_LIBFIL","01/06/02"))
+	cLiberaEmpresa          := AllTrim(GetNewPar("OZ_LIBEMP","99"))
+	cTipoProduto            := AllTrim(GetNewPar("OZ_TIPPROD","PI/PA"))
+	cSintaxeRotina          := ProcName(0)
+	cCheckOp                := AllTrim(Posicione("PAX",1,xFilial("PAX") + cDocumento,"PAX_CRIAOP"))
+	aCarrega                := RetCheckPendencia(cDocumento)
+
+	If ( cStatus $ AGUARDANDO .And. cAvanco $ MOV_GERADO .And. cCheckOp $ GERADO_SUCESSO  )
+
+		aAdd(aSays, "Esta rotina tem por objetivo Apontar Ordem Produção !!!")
+		aAdd(aSays, "Será Gerado Conforme Documento " + cDocumento + " !")
+
+		aAdd(aButtons,{STATUS_RECORD   , .T., {|o| nOpca := STATUS_RECORD   , FechaBatch()}})
+		aAdd(aButtons,{STATUS_NO_RECORD, .T., {|o| nOpca := STATUS_NO_RECORD, FechaBatch()}})
+
+		FormBatch(cTitoDlg, aSays, aButtons)
+
+		If ( nOpca == STATUS_RECORD )
+
+			FWMsgRun(,{|| ApontaProducao(cDocumento) } ,"Apontando Ordem de produção...","Aguarde")
+
+		EndIf
+	ElseIf ( cCheckOp $ AGUARDANDO )
+		cLog := "Não foi criado a Ordem de Produção para Executar o Apontamento!"
+		Aviso("Atenção !!!" ,cLog,{"OK"})
+	ElseIf ( cAvanco $ NAO_APLICAVEL )
+		cLog := "Este processo não será aplicado, pois não Foi criado nos Itens (GRID) !"
+		Aviso("Atenção !!!" ,cLog,{"OK"})
+	Else
+		If ( Len(aCarrega) > 0 )
+			For nCarrega:=1 To Len(aCarrega)
+				If ( AllTrim(aCarrega[nCarrega][01]) == AllTrim(MOV_CRIAROP) )
+					lPassaStatus := .T.
+					Exit				
+				EndIf
+			Next nCarrega
+		EndIf 
+		If ( lPassaStatus )
+			FWMsgRun(,{|| ApontaProducao(cDocumento) } ,"Apontando Ordem de produção...","Aguarde")
+		Else
+			cLog := "A Orden de produção já Foi Apontada, Somente Estornando o apontamento da OP !"
+			Aviso("Atenção !!!" ,cLog,{"OK"})
+		EndIf
+	EndIf
+
+Return
+
+/*
+ 	Gera ordem de Producção em Antas 
+*/
+Static Function ApontaProducao(cDocumento)
+	Local aArea                 := {}  as array
+	Local aCarrega              := {}  as array
+	Local cAlias	            := ""  as character
+	Local cQuery	            := ""  as character
+	Local cLog                  := ""  as character
+	aArea       	            := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery               := getQryOrdemProducao(cDocumento)
+	cAlias               := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		dbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While ((cAlias)->(!EOF()))
+
+				If ( AllTrim((cAlias)->PAY_DOC) $ AllTrim(cDocumento) )
+
+					aAdd( aCarrega,{(cAlias)->PAY_FILIAL,; 
+									(cAlias)->PAY_DOC,;
+									(cAlias)->PAY_ITEM,;
+									(cAlias)->PAY_COD,;
+									(cAlias)->PAY_DESC,;
+									(cAlias)->PAY_TIPO,;
+									(cAlias)->PAY_UM,;
+									(cAlias)->PAY_TM,;
+									(cAlias)->PAY_TES,;
+									(cAlias)->PAY_TPMOV,;
+									(cAlias)->PAY_FILMOV,;
+									(cAlias)->PAY_LOCAL,;
+									(cAlias)->PAY_QTD,;
+									(cAlias)->PAY_COMP,;
+									(cAlias)->PAY_DSCEMP,;
+									(cAlias)->PAY_QTDEMP,;
+									(cAlias)->PAX_DATA,;
+									(cAlias)->PAX_HORA,;
+									(cAlias)->PAX_USER,;
+									(cAlias)->PAY_STATUS,;
+									(cAlias)->PAY_OP,;
+									(cAlias)->PAY_AVANCO})
+				EndIf
+
+				(cAlias)->(dbSkip())
+			EndDo
+		EndIf
+
+		(cAlias)->(dbCloseArea())
+	Else
+
+		cLog += " - Filial: " + cFilAnt + " - Não Localizada"
+	EndIf
+
+	If ( Len(aCarrega) > 0 )
+
+		ExecutaOrdemProducao(aCarrega)
+	Else
+		cLog += " - Filial: " + cFilAnt + " - Não Existe Dados"
+	EndIf
+
+	If ( !Empty(cLog) )
+		showLogInConsole(StrTran(cLog,CRLF,", ") )
+	Endif
+
+	RestArea( aArea )
+
+Return
+
+/*
+	Monta a Query para carregar dados - Busca na PAY
+*/
+Static Function getQryOrdemProducao(cDocumento)
+	Local cQuery 	    := ""  as character
+
+	cQuery := " SELECT " + CRLF
+	cQuery += "		   PAY_FILIAL AS PAY_FILIAL, " + CRLF
+	cQuery += "		   PAY_DOC    AS PAY_DOC,    " + CRLF
+	cQuery += "		   PAY_ITEM   AS PAY_ITEM,   " + CRLF
+	cQuery += "		   PAY_COD    AS PAY_COD,    " + CRLF
+	cQuery += "		   PAY_DESC   AS PAY_DESC,   " + CRLF
+	cQuery += "		   PAY_TIPO   AS PAY_TIPO,   " + CRLF
+	cQuery += "		   PAY_UM     AS PAY_UM,     " + CRLF
+	cQuery += "		   PAY_TM     AS PAY_TM,     " + CRLF
+	cQuery += "		   PAY_TES    AS PAY_TES,    " + CRLF
+	cQuery += "		   PAY_TPMOV  AS PAY_TPMOV,  " + CRLF
+	cQuery += "		   PAY_FILMOV AS PAY_FILMOV, " + CRLF
+	cQuery += "		   PAY_LOCAL  AS PAY_LOCAL,  " + CRLF
+	cQuery += "		   PAY_QTD    AS PAY_QTD,    " + CRLF
+	cQuery += "		   PAY_COMP   AS PAY_COMP,   " + CRLF
+	cQuery += "		   PAY_DSCEMP AS PAY_DSCEMP, " + CRLF
+	cQuery += "		   PAY_QTDEMP AS PAY_QTDEMP, " + CRLF
+	cQuery += "		   PAY_STATUS AS PAY_STATUS, " + CRLF
+	cQuery += "		   PAY_AVANCO AS PAY_AVANCO, " + CRLF
+	cQuery += "		   PAY_OP     AS PAY_OP,     " + CRLF
+	cQuery += "		   PAX_DATA   AS PAX_DATA,   " + CRLF
+	cQuery += "		   PAX_HORA   AS PAX_HORA,   " + CRLF
+	cQuery += "		   PAX_USER   AS PAX_USER    " + CRLF
+	cQuery += " FROM   " + CRLF
+	cQuery += " 	   " + RetSQLTab("PAY") + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              " + RetSQLTab("SB1") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND PAY_COD  = B1_COD    " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("SB1")   + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              " + RetSQLTab("PAX") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND PAY_FILIAL  = PAX_FILIAL " + CRLF
+	cQuery += " 				  AND PAY_DOC     = PAX_DOC    " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("PAX") + CRLF
+	cQuery += " WHERE  1 = 1 " + CRLF
+	cQuery += " 	   AND PAY_FILIAL = '"+xFilial("PAY")+"'            " + CRLF
+	cQuery += "   	   AND PAY_DOC    = " + ValToSql(cDocumento)   + "  " + CRLF
+	cQuery += "   	   AND PAY_STATUS = " + ValToSql(GERADO_SUCESSO)   + "  " + CRLF
+	cQuery += "   	   AND PAY_TPMOV  = " + ValToSql(PRODUCAO) + "  " + CRLF
+	cQuery += "   	   AND PAY_AVANCO = " + ValToSql(MOV_CRIAROP)  + "  " + CRLF
+	cQuery += "   	   AND PAY_OP     <> ' '   " + CRLF
+	cQuery += "   	   AND " + RetSqlDel("PAY")  + CRLF
+	cQuery += " ORDER BY PAY_ITEM " + CRLF
+
+	u_ChangeQuery("\sql\ApontaOrdemProducao_getQryOrdemProducao.sql", @cQuery)
+
+Return cQuery
+
+/*
+	Executa abertura ordem produção via Execauto - Rotina MATA650
+*/
+Static Function ExecutaOrdemProducao(aCarrega)
+	Local aArea             := {}  as array
+	Local aLogErro          := {}  as array
+	Local aCabecalho        := {}  as array
+	Local aItens            := {}  as array
+	Local aItem    			:= {}  as array
+	Local aLine    			:= {}  as array
+	Local aFinaliza         := {}  as array 
+	Local aVerificaSaldo    := {}  as array 
+	Local nLinhaErro        := 0   as numeric
+	Local nCarrega          := 0   as integer
+	Local nIncluiOp         := 0   as integer
+	Local nAlteraOp         := 0   as integer
+	Local nQuantComp        := 0   as integer
+	Local nFinaliza         := 0   as integer
+	Local nVerifica         := 0   as integer
+	Local lGravaTabela      := .T. as logical
+	Local lPassa            := .F. as logical
+	Local lPermite          := .F. as logical
+	Local lExisteEmpenho    := .F. as logical
+	Local cTextoErro        := ""  as character
+	Local cLog              := ""  as character
+	Local cAlias	        := ""  as character
+	Local cEmpBkp 			:= ""  as character
+	Local cFilBkp 			:= ""  as character
+	Local cNumEmpBkp        := ""  as character
+	Local cNumEmp			:= ""  as character
+	Local cOrdemProducao  	:= ""  as character
+	Local cC2Num    		:= ""  as character
+	Local cC2Item    		:= ""  as character
+	Local cC2Sequen   		:= ""  as character
+	Local cCodigoProduto    := ""  as character
+	Local cItemMovimento    := ""  as character
+	Local cCodComponente    := ""  as character
+	Local cDocMovimento     := ""  as character
+	Local cLocalEstoque     := ""  as character
+	Local cRetLog           := ""  as character
+	Local cRetStatus        := ""  as character 
+
+	Private lAutoErrNoFile  := .T. as logical
+	Private lMsErroAuto     := .F. as logical
+
+	aArea       	        := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	If ( Len(aCarrega) > 0 )
+
+		dbSelectArea("PAX")
+		PAX->(dbSetOrder(1))
+
+		dbSelectArea("SB1")
+		SB1->(dbSetOrder(1))
+
+		dbSelectArea("SB2")
+		SB2->(dbSetOrder(1))
+
+		dbSelectArea("SC2")
+		SC2->(dbSetOrder(1))
+
+		dbSelectArea("SD4")
+		SD4->(dbSetOrder(2)) 
+
+		dbSelectArea("PAY")
+		PAY->(dbSetOrder(2))
+
+		For nCarrega:=1 To Len(aCarrega)
+
+			If ( AllTrim(cFilAnt) $ AllTrim(cPermiteFilial) )
+				cEmpBkp    := cEmpAnt
+				cFilBkp    := cFilAnt
+				cNumEmpBkp := cNumEmp
+				cEmpAnt    := AllTrim(cLiberaEmpresa)
+				cFilAnt    := AllTrim(aCarrega[nCarrega][11])
+				cNumEmp    := cEmpAnt + cFilAnt
+				OpenFile(cNumEmp)
+
+				nIncluiOp           := OPCAO_INCLUI
+				nAlteraOP           := OPCAO_ALTERA
+				lGravaTabela        := .F.
+				lPassa              := .F.
+				lExisteEmpenho      := .F.
+				lPermite            := .F.
+				aCabecalho          := {}
+				aItem  			    := {}
+				aItens              := {}
+				aLogErro            := {}
+				aVerificaSaldo      := {}
+				cRetLog             := ""
+
+				If ( AllTrim(Posicione("SB1",1,xFilial("SB1")+aCarrega[nCarrega][04],"B1_COD")) == AllTrim(aCarrega[nCarrega][04]) )
+					lGravaTabela   := .T.
+				Else
+					lGravaTabela   := .F.
+					cRetLog        := "Produto Não Localizado !"
+					If ( PAX->(dbSeek(xFilial("PAX") + aCarrega[nCarrega][02] )))
+						Begin Transaction
+							PAX->(RecLock("PAX",.F.))
+								PAX->PAX_RETLOG := cRetLog
+								PAX->PAX_APTOOP := AllTrim(AGUARDANDO)
+							PAX->(MsUnlock())
+						End Transaction
+					EndIf
+				EndIf
+
+				If ( lGravaTabela )
+					cOrdemProducao := aCarrega[nCarrega][21]
+					cDocMovimento  := aCarrega[nCarrega][02]
+					cItemMovimento := aCarrega[nCarrega][03]
+					cCodigoProduto := aCarrega[nCarrega][04]
+					cTipoMovimento := aCarrega[nCarrega][08]
+					cLocalEstoque  := aCarrega[nCarrega][12]
+					nQuantidade    := aCarrega[nCarrega][13]
+					cCodComponente := aCarrega[nCarrega][14]
+					nQuantComp     := aCarrega[nCarrega][16]
+
+					If ( SB2->(dbSeek(xFilial("SB2") + cCodigoProduto + cLocalEstoque )))
+		
+						cC2Num         := SubStr(cOrdemProducao,1,6)
+						cC2Item        := SubStr(cOrdemProducao,7,2)
+						cC2Sequen      := SubStr(cOrdemProducao,9,3)
+
+						If ( SC2->(dbSeek(xFilial("SC2") + cC2Num + cC2Item + cC2Sequen )))
+							If ( !Empty(cCodComponente) .And. nQuantComp > 0  )
+								If ( SD4->(dbSeek(xFilial("SD4") + cOrdemProducao + cCodComponente + cLocalEstoque )))
+									If SD4->D4_QUANT > 0
+										Begin Transaction
+											SD4->(RecLock("SD4",.F.))
+												SD4->D4_QTDEORI := nQuantComp 
+												SD4->D4_QUANT   := nQuantComp
+											SD4->(MsUnlock())
+										End Transaction
+									EndIf 
+								EndIf
+								lExisteEmpenho := .T.
+							EndIf
+							lGravaTabela := .T.
+						Else
+							lGravaTabela := .F.
+							cRetLog := "Ordem de Produção Não localizada na Base de Dados!"
+							dbSelectArea("PAX")
+							PAX->(dbSetOrder(1))
+							If ( PAX->(dbSeek(xFilial("PAX") + cDocMOvimento )))
+								Begin Transaction
+									PAX->(RecLock("PAX",.F.))
+										PAX->PAX_RETLOG := cRetLog
+										PAX->PAX_APTOOP := AllTrim(AGUARDANDO)
+									PAX->(MsUnlock())
+								End Transaction
+							EndIf
+						EndIf
+
+						aVerificaSaldo := RetSaldoParaApontamento(xFilial("SC2"), cOrdemProducao)
+
+						If ( lExisteEmpenho .Or. Len(aVerificaSaldo) > 0  )
+
+							If ( Len(aVerificaSaldo) > 0  )
+								
+								For nVerifica := 1 To Len(aVerificaSaldo)
+									If ( aVerificaSaldo[nVerifica][05] >= aVerificaSaldo[nVerifica][04]; 
+										.And. Alltrim(aVerificaSaldo[nVerifica][03]) $ Alltrim(cOrdemProducao) )
+										lGravaTabela := .T.
+									Else
+										cRetLog := "Apontamento não Concluido da OP Numero " + Alltrim(cOrdemProducao) +" do produto " + Alltrim(cCodigoProduto)  + CRLF
+										cRetLog += "Não Existe Saldo suficiente do Produto " + Alltrim(aVerificaSaldo[nVerifica][02]) + " Empenhado!" + CRLF
+										cRetLog += "Favor Verificar o Kardex, pois o saldo atual é "+Alltrim(Transform( aVerificaSaldo[nVerifica][05] ,"@E 99,999,999,999.99"))+" " + CRLF
+										cRetLog += "A Quantidade Empenhada é de "+Alltrim(Transform( aVerificaSaldo[nVerifica][04] ,"@E 999,999,999.99"))+" " + CRLF
+										cRetLog += "" + CRLF
+										cRetLog += "Possiveis Soluções!" + CRLF
+										cRetLog += "1 - Ajustar o Empenho Nesta Rotina para OP " + Alltrim(cOrdemProducao) + CRLF
+										cRetLog += "2 - Executar a Rotina de Refaz Saldos do produto " + Alltrim(aVerificaSaldo[nVerifica][02]) + CRLF
+										cRetLog += "" + CRLF
+										cRetLog += "Ponto de Atenção!" + CRLF
+										cRetLog += "Caso seja executado o ajuste nesta rotina, desconsiderar o item 2 !" + CRLF
+										cRetLog += "Se o saldo empenhado estiver correto para apontamento da OP, Será Necessario" + CRLF
+										cRetLog += "Analisar a Ordem de Produção que Gerou o saldo do produto " + Alltrim(aVerificaSaldo[nVerifica][02])  + CRLF
+										cRetLog += "Caso o apontamento esteja incorreto, será necessario estornar o apontamento"  + CRLF
+										cRetLog += "e logo em seguida excluir a OP do produto  " + Alltrim(aVerificaSaldo[nVerifica][02]) + CRLF 
+										cRetLog += "Para Criar uma Nova OP, Utilizar Esta Rotina no Procedimento Abaixo:" + CRLF
+										cRetLog += "1 - Ajustar a Quantidade Nesta Rotina, Antes da Criação da OP!" + CRLF
+										cRetLog += "2 - Executar a Opção de Criar Ordem de Produção!" + CRLF
+										cRetLog += "3 - Executar a Opção de Apontamento de Produção!" + CRLF
+										Aviso("Atenção! - ExecAuto( MATA250 ) !!!" ,cRetLog,{"OK"})
+										lGravaTabela := .F.
+
+										If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+											Begin Transaction
+												PAX->(RecLock("PAX",.F.))
+													PAX->PAX_RETLOG := cRetLog
+													PAX->PAX_APTOOP := AllTrim(AGUARDANDO)
+												PAX->(MsUnlock())
+											End Transaction
+										EndIf
+									EndIf
+								Next nVerifica
+							Else 
+								cRetLog := "Não foi Localizado a ordem de produção "+cOrdemProducao+" do Produto " + cCodigoProduto + CRLF
+								Aviso("Atenção - ExecAuto( MATA250 ) !!!" ,cRetLog,{"OK"})
+								lGravaTabela := .F.
+								If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+									Begin Transaction
+										PAX->(RecLock("PAX",.F.))
+											PAX->PAX_RETLOG := cRetLog
+											PAX->PAX_APTOOP := AllTrim(AGUARDANDO)
+										PAX->(MsUnlock())
+									End Transaction
+								EndIf
+							EndIf
+						EndIf
+					Else
+						lGravaTabela := .F.
+						cRetLog := "Não foi localizado ordem de produção "+cOrdemProducao+" do Produto " + cCodigoProduto + CRLF
+						Aviso("Atenção - ExecAuto( MATA250 ) !!!" ,cRetLog,{"OK"})
+
+						If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+							Begin Transaction
+								PAX->(RecLock("PAX",.F.))
+									PAX->PAX_RETLOG := cRetLog
+									PAX->PAX_APTOOP := AllTrim(AGUARDANDO)
+								PAX->(MsUnlock())
+							End Transaction
+						EndIf
+					EndIf
+				EndIf
+
+				If ( lGravaTabela )
+
+					lMsErroAuto := .F.
+
+					If ( SB1->(dbSeek(xFilial("SB1") + aCarrega[nCarrega][04] )) )
+
+						If ( lGravaTabela )
+
+							aCabecalho := {}
+							aItens     := {}
+							aLine      := {}
+
+							dbSelectArea("SD3")
+
+							aCabecalho := { {"D3_FILIAL"  ,xFilial("SC2")         ,NIL},;
+											{"D3_OP"      ,cOrdemProducao 	      ,NIL},;
+											{"D3_COD"     ,cCodigoProduto         ,NIL},;
+											{"D3_QUANT"   ,nQuantidade            ,NIL},;
+											{"D3_PARCTOT" ,"T"                    ,NIL},;
+											{"D3_TM"      ,cTipoMovimento         ,NIL},;
+											{"D3_QTMAIOR" ,0                      ,NIL}}
+							ProcRegua(0)
+							IncProc("Apontando Ordem de Producao do Produto ... " + Alltrim(aCarrega[nCarrega][04]) + "...")
+
+							msExecAuto({|x,Y| mata250(x,Y)},aCabecalho,nIncluiOp)
+
+							If ( lMsErroAuto )
+
+								cTextoErro := ""
+								aLogErro   := GetAutoGRLog()
+
+								For nLinhaErro := 1 To Len(aLogErro)
+									cTextoErro += aLogErro[nLinhaErro] + CRLF
+								Next nLinhaErro
+
+								cLog       += cTextoErro + CRLF
+								ShowLogInConsole(cLog)
+								Aviso("Atenção - ExecAuto( MATA250 ) !!!" ,cLog,{"OK"})
+								lPermite := .F.
+							Else
+								lPermite := .T.
+							EndIf
+
+							If ( lPermite ) 
+								cLog    := "Ordem de Producao Não Apontada!" + CRLF
+								cRetLog := "Apontado Ordem de Produção Numero "+(cOrdemProducao) + CRLF
+							Else 
+								cLog    := "Ordem de Producao Apontada com sucesso!" + CRLF
+								cRetLog := "Não foi possivel Gerar Apontado Ordem de Produção"
+							EndIf 
+							ShowLogInConsole(cLog)
+
+							If ( PAX->(dbSeek(xFilial("PAX") + cDocMOvimento )))
+								If ( lPermite )
+									cRetStatus := GERADO_SUCESSO
+								Else 
+									cRetStatus := AGUARDANDO
+								EndIf
+								Begin Transaction
+									PAX->(RecLock("PAX",.F.))
+										PAX->PAX_STATUS := PROCESSANDO
+										PAX->PAX_APTOOP := cRetStatus
+										PAX->PAX_DATA   := dDataBase
+										PAX->PAX_RETLOG := cRetLog
+									PAX->(MsUnlock())
+								End Transaction
+							EndIf
+
+							aFinaliza := ValidaEncerramento(cDocMovimento,cFilAnt)  	
+
+							If Len(aFinaliza) > 0
+								For nFinaliza := 1 To Len(aFinaliza)
+
+									lPassa := .F.
+
+									If ( lPermite )
+										If ( aFinaliza[nFinaliza][03] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL ))
+											lPassa := .T.
+										Else
+											lPassa := .F.
+										EndIf
+									EndIf
+
+									If ( lPassa )
+										If ( aFinaliza[nFinaliza][04] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+											lPassa := .T.
+										Else
+											lPassa := .F.
+										EndIf
+									EndIf
+
+									If ( lPassa )
+										If ( aFinaliza[nFinaliza][05] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+											lPassa := .T.
+										Else
+											lPassa := .F.
+										EndIf
+									EndIf
+
+									If ( lPassa )
+										If (aFinaliza[nFinaliza][06] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+											lPassa := .T.
+										Else
+											lPassa := .F.
+										EndIf
+									EndIf
+
+									If ( lPassa )
+										If (aFinaliza[nFinaliza][07] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+											lPassa := .T.
+										Else
+											lPassa := .F.
+										EndIf
+									EndIf
+
+									If ( lPassa )
+										If (aFinaliza[nFinaliza][08] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+											lPassa := .T.
+										Else
+											lPassa := .F.
+										EndIf
+									EndIf
+
+									If ( lPassa .And. lPermite ) 
+										If ( PAX->(dbSeek(xFilial("PAX") + aFinaliza[nFinaliza][02])))
+											Begin Transaction
+												PAX->(RecLock("PAX",.F.))
+													PAX->PAX_STATUS := GERADO_SUCESSO
+												PAX->(MsUnlock())
+											End Transaction
+										EndIf
+									EndIf
+								Next nFinaliza 
+							EndIf 
+
+							If ( lPermite ) 
+								If ( PAY->(dbSeek(xFilial("PAY") + cCodigoProduto + cDocMovimento + cItemMovimento )))
+									Begin Transaction
+										PAY->(RecLock("PAY",.F.))
+											PAY->PAY_STATUS := GERADO_SUCESSO
+											PAY->PAY_AVANCO := MOV_APONTAROP
+											PAY->PAY_DATA   := dDataBase
+											PAY->PAY_HORA   := Time()
+											PAY->PAY_OP     := cOrdemProducao
+										PAY->(MsUnlock())
+									End Transaction
+								EndIf
+							EndIf
+						EndIf
+					EndIf
+				EndIf
+			EndIf
+		Next nCarrega
+
+		If ( !Empty(cAlias) )
+			dbSelectArea(cAlias)
+			(cAlias)->(dbCloseArea())
+		EndIf
+
+		If ( !Empty(AllTrim(cEmpBkp)))
+			cEmpAnt := cEmpBkp
+			cFilAnt := cFilBkp
+			cNumEmp := cEmpAnt + cFilAnt
+			OpenFile(cNumEmp)
+		EndIf
+
+	EndIf
+
+	RestArea( aArea )
+
+Return
+
+/*
+ 	Gera Validação de Encerramento da movimentação  
+*/
+Static Function ValidaEncerramento(cDocMovimento,cCodFilial)
+	Local aArea                 := {}  as array
+	Local aCheckMovimento       := {}  as array
+	Local cAlias	            := ""  as character
+	Local cQuery	            := ""  as character
+	Local cLog                  := ""  as character
+
+	aArea       	            := GetArea()
+	
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery               := QryCheckValidacao(cDocMovimento,cCodFilial)
+	cAlias               := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		dbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While ((cAlias)->(!EOF()))
+
+				aAdd(aCheckMovimento,{(cAlias)->PAX_FILIAL,;
+									  (cAlias)->PAX_DOC,;
+									  (cAlias)->PAX_CRIAOP,;
+									  (cAlias)->PAX_APTOOP,;
+									  (cAlias)->PAX_TRANSF,; 
+									  (cAlias)->PAX_REQUIS,; 
+									  (cAlias)->PAX_PVENDA,; 
+									  (cAlias)->PAX_GERNF}) 
+				
+				(cAlias)->(dbSkip())
+			EndDo
+		EndIf 
+
+		(cAlias)->(dbCloseArea())
+	Else
+
+		cLog += " - Filial: " + cFilAnt + " - Não Localizada"
+	EndIf
+
+	If ( !Empty(cLog) )
+		showLogInConsole(StrTran(cLog,CRLF,", ") )
+	Endif
+
+	RestArea( aArea )
+
+Return aCheckMovimento
+
+/*
+	Monta a Query para Checar os status da PAX
+*/
+Static Function QryCheckValidacao(cDocMovimento,cCodFilial)
+	Local cQuery 	    := ""  as character
+
+	cQuery := " SELECT  " + CRLF
+	cQuery += "		   PAX_FILIAL AS PAX_FILIAL, " + CRLF
+	cQuery += "		   PAX_DOC    AS PAX_DOC,    " + CRLF
+	cQuery += "		   PAX_CRIAOP AS PAX_CRIAOP, " + CRLF
+	cQuery += "		   PAX_APTOOP AS PAX_APTOOP, " + CRLF
+	cQuery += "		   PAX_TRANSF AS PAX_TRANSF, " + CRLF
+	cQuery += "		   PAX_REQUIS AS PAX_REQUIS, " + CRLF
+	cQuery += "		   PAX_PVENDA AS PAX_PVENDA, " + CRLF
+	cQuery += "		   PAX_GERNF  AS PAX_GERNF   " + CRLF
+	cQuery += " FROM   " + CRLF
+	cQuery += " 	   " + RetSQLTab("PAX") + CRLF
+	cQuery += " WHERE  1 = 1 " + CRLF
+	cQuery += "   	   AND PAX_FILIAL = " + ValToSql(cCodFilial) + "  " + CRLF
+	cQuery += "   	   AND PAX_DOC    = " + ValToSql(cDocMovimento) + "  " + CRLF
+	cQuery += "   	   AND " + RetSqlDel("PAX") + CRLF
+
+	u_ChangeQuery("\sql\ApontaOrdemProducao_QryCheckValidacao.sql", @cQuery)
+
+Return cQuery
+
+/*
+ 	Validação para verificar se existe saldo disponivel
+*/
+Static Function RetSaldoParaApontamento(cCodFilial, cOrdemProducao)
+	Local aArea                 := {}  as array
+	Local aRetSaldo             := {}  as array
+	Local cAlias	            := ""  as character
+	Local cQuery	            := ""  as character
+	Local cLog                  := ""  as character
+
+	aArea       	            := GetArea()
+	
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery               := QryVerificaSaldo(cCodFilial, cOrdemProducao)
+	cAlias               := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		dbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While ((cAlias)->(!EOF()))
+
+				aAdd(aRetSaldo,{(cAlias)->D4_FILIAL,;
+								(cAlias)->B2_COD,;
+								(cAlias)->D4_OP,;
+								(cAlias)->D4_QUANT,;
+								(cAlias)->B2_QATU,; 
+								(cAlias)->C2_PRODUTO,; 
+								(cAlias)->B1_TIPO}) 
+
+				(cAlias)->(dbSkip())
+			EndDo
+		EndIf 
+
+		(cAlias)->(dbCloseArea())
+	Else
+
+		cLog += " - Filial: " + cFilAnt + " - Não Localizada"
+	EndIf
+
+	If ( !Empty(cLog) )
+		showLogInConsole(StrTran(cLog,CRLF,", ") )
+	Endif
+
+	RestArea( aArea )
+
+Return aRetSaldo
+
+/*
+	Query para verificar se há saldo Suficiente para apontamento.
+*/
+Static Function QryVerificaSaldo(cCodFilial, cOrdemProducao)
+	Local cQuery 	    := ""  as character
+	
+	cQuery := " SELECT " + CRLF
+	cQuery += "        D4_FILIAL  AS D4_FILIAL,  " + CRLF 
+	cQuery += "        B2_COD     AS B2_COD,     " + CRLF 
+	cQuery += "        D4_OP      AS D4_OP,      " + CRLF  
+	cQuery += "        D4_QUANT   AS D4_QUANT,   " + CRLF  
+	cQuery += "        B2_QATU    AS B2_QATU,    " + CRLF  
+	cQuery += "        C2_PRODUTO AS C2_PRODUTO, " + CRLF  
+	cQuery += "        B1_TIPO    AS B1_TIPO     " + CRLF  
+	cQuery += " FROM   " + CRLF
+	cQuery += " 	   " + RetSQLTab("SD4") + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              " + RetSQLTab("SB1") +  CRLF
+	cQuery += " 	              ON 1=1 "  + CRLF
+	cQuery += "        AND B1_FILIAL      = '"+xFilial("SB1")+"' " + CRLF  
+	cQuery += "        AND B1_COD         = D4_COD " + CRLF  
+	cQuery += "   	   AND " + RetSqlDel("SB1") + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              " + RetSQLTab("SB2") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += "        AND B2_FILIAL      = D4_FILIAL " + CRLF
+	cQuery += "        AND B2_LOCAL       = D4_LOCAL  " + CRLF 
+	cQuery += "        AND B2_COD         = D4_COD    " + CRLF
+	cQuery += "   	   AND " + RetSqlDel("SB2") + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              " + RetSQLTab("SC2") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += "        AND C2_FILIAL = D4_FILIAL            " + CRLF
+	cQuery += "        AND C2_NUM+C2_ITEM+C2_SEQUEN = D4_OP " + CRLF
+	cQuery += "   	   AND " + RetSqlDel("SC2") + CRLF
+	cQuery += " WHERE  1=1 " + CRLF
+	cQuery += "   	   AND D4_FILIAL = " + ValToSql(cCodFilial)        + " " + CRLF
+	cQuery += "   	   AND D4_OP     = " + ValToSql(cOrdemProducao)    + " " + CRLF
+	cQuery += "   	   AND B1_TIPO  IN " + FormatIn(cTipoProduto, "/") + " " + CRLF
+	cQuery += "   	   AND " + RetSqlDel("SD4") + CRLF
+
+	u_ChangeQuery("\sql\CriaOrdemProducao_QryVerificaSaldo.sql", @cQuery)
+
+Return cQuery
+
+/*
+ 	Validação para verificar se existe saldo disponivel
+*/
+Static Function RetCheckPendencia(cDocumento)
+	Local aArea                 := {}  as array
+	Local aRetStatus            := {}  as array
+	Local cAlias	            := ""  as character
+	Local cQuery	            := ""  as character
+	Local cLog                  := ""  as character
+
+	aArea       	            := GetArea()
+	
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery               := getQryRetornaStatus(cDocumento)
+	cAlias               := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		dbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While ((cAlias)->(!EOF()))
+
+				aAdd(aRetStatus,{(cAlias)->PAY_AVANCO}) 
+
+				(cAlias)->(dbSkip())
+			EndDo
+		EndIf 
+
+		(cAlias)->(dbCloseArea())
+	Else
+
+		cLog += " - Filial: " + cFilAnt + " - Não Localizada"
+	EndIf
+
+	If ( !Empty(cLog) )
+		showLogInConsole(StrTran(cLog,CRLF,", ") )
+	Endif
+
+	RestArea( aArea )
+
+Return aRetStatus
+
+/*
+	Monta a Query para carregar dados - Busca na PAY - Status
+*/
+Static Function getQryRetornaStatus(cDocumento)
+	Local cQuery 	    := ""  as character
+
+	cQuery := " SELECT " + CRLF
+	cQuery += "		   PAY_FILIAL AS PAY_FILIAL, " + CRLF
+	cQuery += "		   PAY_DOC    AS PAY_DOC,    " + CRLF
+	cQuery += "		   PAY_STATUS AS PAY_STATUS, " + CRLF
+	cQuery += "		   PAY_AVANCO AS PAY_AVANCO  " + CRLF
+	cQuery += " FROM   " + CRLF
+	cQuery += " 	   " + RetSQLTab("PAY") + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              " + RetSQLTab("PAX") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND PAY_FILIAL  = PAX_FILIAL " + CRLF
+	cQuery += " 				  AND PAY_DOC     = PAX_DOC    " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("PAX") + CRLF
+	cQuery += " WHERE  1 = 1 " + CRLF
+	cQuery += " 	   AND PAY_FILIAL = '"+xFilial("PAY")+"'            " + CRLF
+	cQuery += "   	   AND PAY_DOC    = " + ValToSql(cDocumento)   + "  " + CRLF
+	cQuery += "   	   AND PAY_STATUS = " + ValToSql(GERADO_SUCESSO)   + "  " + CRLF
+	cQuery += "   	   AND PAY_TPMOV  = " + ValToSql(PRODUCAO) + "  " + CRLF
+	cQuery += "   	   AND PAY_AVANCO = " + ValToSql(MOV_CRIAROP)  + "  " + CRLF
+	cQuery += "   	   AND PAY_OP     <> ' '   " + CRLF
+	cQuery += "   	   AND " + RetSqlDel("PAY")  + CRLF
+	cQuery += " ORDER BY PAY_ITEM " + CRLF
+
+	u_ChangeQuery("\sql\ApontaOrdemProducao_getQryRetornaStatus.sql", @cQuery)
+
+Return cQuery
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,cSintaxeRotina)
+
+Return
+

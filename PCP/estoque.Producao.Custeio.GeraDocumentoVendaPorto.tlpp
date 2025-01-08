@@ -1,0 +1,765 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+#include "ozminerals.ch"
+
+#define  PRODUCAO         "1"
+#define  TRANSFERENCIA    "2"
+#define  BAIXA_REQUISICAO "3"
+#define  VENDA_CPV        "4"
+
+#define  PROCESSANDO      "1"
+
+#define  AGUARDANDO       "1"
+#define  GERADO_SUCESSO   "2"
+#define  NAO_APLICAVEL    "3"
+
+#define  MANUTENCAO_OS    "OS"
+
+#define  DOC_SERIE        "CST"
+
+#define OPCAO_INCLUI      3
+#define OPCAO_ALTERA      4
+#define OPCAO_EXCLUI      5
+
+#define  MOV_GERADO       "1"
+#define  MOV_CRIAROP      "2"
+#define  MOV_APONTAROP    "3"
+#define  MOV_TRANSFERIR   "4"
+#define  MOV_BAIXAREQ     "5"
+#define  MOV_PEDVENDA     "6"
+#define  MOV_DOCGERADO    "7"
+
+namespace estoque.Producao.Custeio
+
+/*/{Protheus.doc} GeraDocumentoVendaPorto
+
+	Rotina que é chamada de forma Automatica MATA460/461
+	Tratamento do Custo em partes dentro do Sistema
+
+@type function
+@author Fabio Santos - CRM Service
+@since 08/12/2023
+@version P12
+@database SQL SERVER 
+
+@see OZGENSQL
+@see OZGEN18
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function GeraDocumentoVendaPorto(cDocumento,cStatus,cAvanco)
+	Local  aSays            := {}  as array
+	Local  aButtons         := {}  as array
+	Local  nOpca            := 0   as numeric
+	Local  cTitoDlg         := ""  as character
+	Local  cLog             := ""  as character
+	Local  cCheckOp         := ""  as character
+
+	Private cSintaxeRotina  := ""  as character
+	Private cClientePadrao  := ""  as character
+	Private cCondPgto       := ""  as character
+	Private	cPermiteFilial  := ""  as character
+	Private	cLiberaEmpresa  := ""  as character
+	Private	cLojaCliente    := ""  as character
+
+	cPermiteFilial          := AllTrim(GetNewPar("OZ_LIBFIL","01/06/02"))
+	cLiberaEmpresa          := AllTrim(GetNewPar("OZ_LIBEMP","99"))
+	cClientePadrao          := AllTrim(GetNewPar("OZ_CLIENT","000083"))
+	cLojaCliente            := AllTrim(GetNewPar("OZ_CLLOJA","0001"))
+	cCondPgto               := AllTrim(GetNewPar("OZ_CONPGTO","001"))
+	cSintaxeRotina          := ProcName(0)
+	cCheckOp                := AllTrim(Posicione("PAX",1,xFilial("PAX") + cDocumento,"PAX_APTOOP"))
+
+	If ( cStatus $ AGUARDANDO .And. cAvanco $ MOV_GERADO .And. cCheckOp $ GERADO_SUCESSO )
+
+		aAdd(aSays, "Esta rotina tem por objetivo Gerar Documento do CPV !")
+		aAdd(aSays, "Esta Documento Não Gera Livro Fiscal, Utilizado para CPV!")
+		aAdd(aSays, "Será Gerado Conforme Documento " + cDocumento + " !")
+
+		aAdd(aButtons,{STATUS_RECORD   , .T., {|o| nOpca := STATUS_RECORD   , FechaBatch()}})
+		aAdd(aButtons,{STATUS_NO_RECORD, .T., {|o| nOpca := STATUS_NO_RECORD, FechaBatch()}})
+
+		FormBatch(cTitoDlg, aSays, aButtons)
+
+		If ( nOpca == STATUS_RECORD )
+
+			FWMsgRun(,{|| DocumentoVendaPorto(cDocumento) } ,"Gerando Documento Venda Porto...","Aguarde")
+		EndIf
+	ElseIf ( cCheckOp $ AGUARDANDO )
+		cLog := "Não Foi Executado o Apontamento de Produção, Será necessario executar antes de Gerar Documento!"
+		Aviso("Atenção !!!" ,cLog,{"OK"})
+	ElseIf ( cAvanco $ NAO_APLICAVEL )
+		cLog := "Este processo não será aplicado, pois não Foi criado nos Itens (GRID) !"
+		Aviso("Atenção !!!" ,cLog,{"OK"})
+	Else
+		cLog := "Pedido de VEndas Já executada, Somente Excluindo é possivel Recria-lo"
+		Aviso("Atenção !!!" ,cLog,{"OK"})
+	EndIf
+
+Return
+
+/*
+ 	Gera Pedido de Venda no Porto  
+*/
+Static Function DocumentoVendaPorto(cDocumento)
+	Local aArea                 := {}  as array
+	Local aCarrega              := {}  as array
+	Local cAlias	            := ""  as character
+	Local cQuery	            := ""  as character
+	Local cLog                  := ""  as character
+	aArea       	            := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery               := getQryDocumentoVendaPorto(cDocumento)
+	cAlias               := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		dbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While ((cAlias)->(!EOF()))
+
+				If ( AllTrim((cAlias)->PAY_DOC) $ AllTrim(cDocumento) )
+
+					aAdd( aCarrega,{(cAlias)->PAY_FILIAL,;
+						(cAlias)->PAY_DOC,;
+						(cAlias)->PAY_ITEM,;
+						(cAlias)->PAY_COD,;
+						(cAlias)->PAY_DESC,;
+						(cAlias)->PAY_TIPO,;
+						(cAlias)->PAY_UM,;
+						(cAlias)->PAY_TM,;
+						(cAlias)->PAY_TES,;
+						(cAlias)->PAY_TPMOV,;
+						(cAlias)->PAY_FILMOV,;
+						(cAlias)->PAY_LOCAL,;
+						(cAlias)->PAY_QTD,;
+						(cAlias)->PAY_COMP,;
+						(cAlias)->PAY_DSCEMP,;
+						(cAlias)->PAY_QTDEMP,;
+						(cAlias)->PAX_DATA,;
+						(cAlias)->PAX_HORA,;
+						(cAlias)->PAX_USER,;
+						(cAlias)->PAY_STATUS,;
+						(cAlias)->PAY_OP,;
+						(cAlias)->PAY_NUMPED,;
+						(cAlias)->PAY_AVANCO})
+				EndIf
+
+				(cAlias)->(dbSkip())
+			EndDo
+		EndIf
+
+		(cAlias)->(dbCloseArea())
+	Else
+
+		cLog += " - Filial: " + cFilAnt + " - Não Localizada"
+	EndIf
+
+	If ( Len(aCarrega) > 0 )
+
+		ExecutaDocumentoVendaPorto(aCarrega)
+	Else
+		cLog += " - Filial: " + cFilAnt + " - Não Existe Dados"
+	EndIf
+
+	If ( !Empty(cLog) )
+		showLogInConsole(StrTran(cLog,CRLF,", ") )
+	Endif
+
+	RestArea( aArea )
+
+Return
+
+/*
+	Monta a Query para carregar dados - Busca na PAY
+*/
+Static Function getQryDocumentoVendaPorto(cDocumento)
+	Local cQuery 	    := ""  as character
+
+	cQuery := " SELECT " + CRLF
+	cQuery += "		   PAY_FILIAL AS PAY_FILIAL, " + CRLF
+	cQuery += "		   PAY_DOC    AS PAY_DOC,    " + CRLF
+	cQuery += "		   PAY_ITEM   AS PAY_ITEM,   " + CRLF
+	cQuery += "		   PAY_COD    AS PAY_COD,    " + CRLF
+	cQuery += "		   PAY_DESC   AS PAY_DESC,   " + CRLF
+	cQuery += "		   PAY_TIPO   AS PAY_TIPO,   " + CRLF
+	cQuery += "		   PAY_UM     AS PAY_UM,     " + CRLF
+	cQuery += "		   PAY_TM     AS PAY_TM,     " + CRLF
+	cQuery += "		   PAY_TES    AS PAY_TES,    " + CRLF
+	cQuery += "		   PAY_TPMOV  AS PAY_TPMOV,  " + CRLF
+	cQuery += "		   PAY_FILMOV AS PAY_FILMOV, " + CRLF
+	cQuery += "		   PAY_LOCAL  AS PAY_LOCAL,  " + CRLF
+	cQuery += "		   PAY_QTD    AS PAY_QTD,    " + CRLF
+	cQuery += "		   PAY_COMP   AS PAY_COMP,   " + CRLF
+	cQuery += "		   PAY_DSCEMP AS PAY_DSCEMP, " + CRLF
+	cQuery += "		   PAY_QTDEMP AS PAY_QTDEMP, " + CRLF
+	cQuery += "		   PAY_STATUS AS PAY_STATUS, " + CRLF
+	cQuery += "		   PAY_AVANCO AS PAY_AVANCO, " + CRLF
+	cQuery += "		   PAY_OP     AS PAY_OP,     " + CRLF
+	cQuery += "		   PAY_NUMPED AS PAY_NUMPED, " + CRLF
+	cQuery += "		   PAX_DATA   AS PAX_DATA,   " + CRLF
+	cQuery += "		   PAX_HORA   AS PAX_HORA,   " + CRLF
+	cQuery += "		   PAX_USER   AS PAX_USER,   " + CRLF
+	cQuery += "		   B2_QATU    AS B2_QATU     " + CRLF
+	cQuery += " FROM   " + CRLF
+	cQuery += " 	   " + RetSQLTab("PAY") + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              "+ RetSQLTab("SB1") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND PAY_COD  = B1_COD    " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("SB1")   + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              "+ RetSQLTab("PAX") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND PAY_FILIAL  = PAX_FILIAL " + CRLF
+	cQuery += " 				  AND PAY_DOC     = PAX_DOC    " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("PAX") + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              "+ RetSQLTab("SB2") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND B2_FILIAL  = PAY_FILIAL " + CRLF
+	cQuery += " 				  AND B2_COD     = PAY_COD    " + CRLF
+	cQuery += " 				  AND B2_LOCAL   = PAY_LOCAL  " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("SB2") + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              "+ RetSQLTab("SC6") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND C6_FILIAL  = PAY_FILIAL " + CRLF
+	cQuery += " 				  AND C6_PRODUTO = PAY_COD    " + CRLF
+	cQuery += " 				  AND C6_LOCAL   = PAY_LOCAL  " + CRLF
+	cQuery += " 				  AND C6_NUM     = PAY_NUMPED " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("SC6") + CRLF
+	cQuery += " WHERE  1 = 1 " + CRLF
+	cQuery += "   	   AND PAY_DOC    = " + ValToSql(cDocumento) + "  " + CRLF
+	cQuery += "   	   AND PAY_STATUS = " + ValToSql(GERADO_SUCESSO) + "  " + CRLF
+	cQuery += "   	   AND PAY_AVANCO = " + ValToSql(MOV_PEDVENDA) + "  " + CRLF
+	cQuery += "   	   AND PAY_TPMOV  = " + ValToSql(VENDA_CPV)  + "  " + CRLF
+	cQuery += "   	   AND " + RetSqlDel("PAY") + CRLF
+	cQuery += " ORDER BY PAY_ITEM " + CRLF
+
+	u_ChangeQuery("\sql\GeraDocumentoVendaPorto_getQryDocumentoVendaPorto.sql", @cQuery)
+
+Return cQuery
+
+/*
+	Executa abertura ordem produção via Execauto - Rotina MATA650
+*/
+Static Function ExecutaDocumentoVendaPorto(aCarrega)
+	Local aArea             := {}  as array
+	Local aPvlDocS          := {}  as array
+	Local aFinaliza         := {}  as array
+	Local nCarrega          := 0   as integer
+	Local nQuantidade       := 0   as integer
+	Local nContador         := 0   as integer
+	Local nPrcVen           := 0   as integer
+	Local nFinaliza         := 0   as integer
+	Local lGravaTabela      := .T. as logical
+	Local lPermiteExecutar  := .T. as logical
+	Local lPassa            := .F. as logical
+	Local cLog              := ""  as character
+	Local cNotaFiscal       := ""  as character
+	Local cSerie            := ""  as character
+	Local cAlias	        := ""  as character
+	Local cEmpBkp 			:= ""  as character
+	Local cFilBkp 			:= ""  as character
+	Local cNumEmpBkp        := ""  as character
+	Local cNumEmp			:= ""  as character
+	Local cCodigoProduto    := ""  as character
+	Local cDestinoLocal     := ""  as character
+	Local cItemMovimento    := ""  as character
+	Local cUnidadeMedida    := ""  as character
+	Local cCodigoTes        := ""  as character
+	Local cPedidoVenda      := ""  as character
+	Local cDocMovimento	    := ""  as character
+	Local cCodCliente       := ""  as character
+	Local cRetLog           := ""  as character
+
+	aArea       	        := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	If ( Len(aCarrega) > 0 )
+
+		dbSelectArea("PAX")
+		PAX->(dbSetOrder(1))
+
+		dbSelectArea("PAY")
+		PAY->(dbSetOrder(2))
+
+		dbSelectArea("SB1")
+		SB1->(dbSetOrder(1))
+
+		dbSelectArea("SC5")
+		SC5->(DbSetOrder(1))
+
+		dbSelectArea("SB2")
+		SB2->(dbSetOrder(1))
+
+		dbSelectArea("SC6")
+		SC6->(dbSetOrder(1))
+
+		dbSelectArea("SC5")
+		SC5->(dbSetOrder(1))
+
+		dbSelectArea("SC9")
+		SC9->(DbSetOrder(1))
+
+		dbSelectArea("SE4")
+		SE4->(DbSetOrder(1))
+
+		dbSelectArea("SF4")
+		SF4->(DbSetOrder(1))
+
+		For nCarrega:=1 To Len(aCarrega)
+
+			If ( AllTrim(cFilAnt) $ AllTrim(cPermiteFilial) )
+				cEmpBkp    := cEmpAnt
+				cFilBkp    := cFilAnt
+				cNumEmpBkp := cNumEmp
+				cEmpAnt    := AllTrim(cLiberaEmpresa)
+				cFilAnt    := AllTrim(aCarrega[nCarrega][11])
+				cNumEmp    := cEmpAnt + cFilAnt
+				OpenFile(cNumEmp)
+
+				lGravaTabela        := .F.
+				lPermiteExecutar    := .F.
+				lPassa              := .F.
+				aPvlDocS            := {}
+				nQuantidade         := 0
+				nContador++
+
+				If ( AllTrim(Posicione("SB1",1,xFilial("SB1")+aCarrega[nCarrega][04],"B1_COD")) == AllTrim(aCarrega[nCarrega][04]) )
+					lGravaTabela   := .T.
+				Else
+					lGravaTabela   := .F.
+					cRetLog        := "Codigo de Produto Não Localizado " + Alltrim(aCarrega[nCarrega][04]) + CRLF
+					If ( PAX->(dbSeek(xFilial("PAX") + aCarrega[nCarrega][02] )))
+						Begin Transaction
+							PAX->(RecLock("PAX",.F.))
+								PAX->PAX_RETLOG := cRetLog
+							PAX->(MsUnlock())
+						End Transaction
+					EndIf
+				EndIf
+
+				If ( lGravaTabela )
+					If ( AllTrim(Posicione("SF4",1,xFilial("SF4")+aCarrega[nCarrega][09],"F4_CODIGO")) == AllTrim(aCarrega[nCarrega][09]) )
+						lGravaTabela   := .T.
+					Else
+						lGravaTabela   := .F.
+						cLog           := "TES Não Localizada"
+						cRetLog        := "Codigo de TES Não Localizada!"
+						If ( PAX->(dbSeek(xFilial("PAX") + aCarrega[nCarrega][02] )))
+							Begin Transaction
+								PAX->(RecLock("PAX",.F.))
+									PAX->PAX_RETLOG := cRetLog
+								PAX->(MsUnlock())
+							End Transaction
+						EndIf
+					EndIf
+				EndIf
+
+				If ( lGravaTabela )
+
+					If ( SB1->(dbSeek(xFilial("SB1") + aCarrega[nCarrega][04] )) )
+
+						cCodCliente    := Alltrim(cClientePadrao)
+						cDocMovimento  := aCarrega[nCarrega][02]
+						cItemMovimento := aCarrega[nCarrega][03]
+						cCodigoProduto := aCarrega[nCarrega][04]
+						cDestinoLocal  := aCarrega[nCarrega][12]
+						cUnidadeMedida := aCarrega[nCarrega][07]
+						cCodigoTes     := aCarrega[nCarrega][08]
+						nQuantidade    := aCarrega[nCarrega][13]
+						cPedidoVenda   := aCarrega[nCarrega][22]
+						cSerie         := DOC_SERIE
+
+						If ( SC5->(MsSeek(xFilial("SC5") + cPedidoVenda )))
+							lPermiteExecutar := .T.
+							lGravaTabela     := .T.
+						Else
+							lPermiteExecutar := .F.
+							lGravaTabela     := .F.
+							cRetLog          := "Não Localizado Pedido de Venda NUmero " + cPedidoVenda
+							Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cRetLog,{"OK"})
+							If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+								Begin Transaction
+									PAX->(RecLock("PAX",.F.))
+										PAX->PAX_RETLOG := cRetLog
+									PAX->(MsUnlock())
+								End Transaction
+							EndIf
+						EndIf
+
+						If ( SB2->(dbSeek(xFilial("SB2") + cCodigoProduto + cDestinoLocal )))
+							If ( SB2->B2_QATU >= nQuantidade )
+								lGravaTabela := .T.
+							Else
+								cRetLog := "Não Existe Saldo suficiente para Gerar Documento CPV do Produto " + cCodigoProduto + CRLF
+								cRetLog += "Será Necessario Verificar o Kardex e a Quantidade na Rotina de Manutenção Produção Automatica!!" + CRLF
+								Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cRetLog,{"OK"})
+								lGravaTabela := .F.
+								If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+									Begin Transaction
+										PAX->(RecLock("PAX",.F.))
+											PAX->PAX_RETLOG := cRetLog
+										PAX->(MsUnlock())
+									End Transaction
+								EndIf
+							EndIf
+						Else
+							lGravaTabela := .F.
+							cRetLog := "Não foi localizado na tabela SB2 o Produto " + cCodigoProduto + CRLF
+							Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cRetLog,{"OK"})
+							If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+								Begin Transaction
+									PAX->(RecLock("PAX",.F.))
+										PAX->PAX_RETLOG := cRetLog
+									PAX->(MsUnlock())
+								End Transaction
+							EndIf
+						EndIf
+
+						If ( lGravaTabela )
+
+							If ( lPermiteExecutar )
+								If ( SC6->(MsSeek(xFilial("SC6") + SC5->C5_NUM )))
+									lPermiteExecutar := .T.
+								Else
+									lPermiteExecutar := .F.
+									cRetLog          := "Não Localizado Pedido de Venda NUmero " +cPedidoVenda
+									Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cRetLog,{"OK"})
+
+									If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+										Begin Transaction
+											PAX->(RecLock("PAX",.F.))
+												PAX->PAX_RETLOG := cRetLog
+											PAX->(MsUnlock())
+										End Transaction
+									EndIf
+								EndIf
+							EndIf
+
+							Pergunte("MT460A",.F.)
+
+							If ( lPermiteExecutar )
+								If ( SE4->(MsSeek(xFilial("SE4") + SC5->C5_CONDPAG )) )
+									lPermiteExecutar := .T.
+								Else
+									lPermiteExecutar := .F.
+									cRetLog          := "Não Localizado Condição de Pagamento do Pedido de Venda NUmero " +cPedidoVenda
+									Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cRetLog,{"OK"})
+									If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+										Begin Transaction
+											PAX->(RecLock("PAX",.F.))
+												PAX->PAX_RETLOG := cRetLog
+											PAX->(MsUnlock())
+										End Transaction
+									EndIf
+								EndIf
+							EndIf
+
+							If ( lPermiteExecutar )
+								If ( SF4->(MsSeek(xFilial("SF4") + SC6->C6_TES )))
+									lPermiteExecutar := .T.
+								Else
+									lPermiteExecutar := .F.
+									cRetLog          := "Não Localizado a TES no Pedido de Venda NUmero " +cPedidoVenda
+									Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cRetLog,{"OK"})
+									If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+										Begin Transaction
+											PAX->(RecLock("PAX",.F.))
+												PAX->PAX_RETLOG := cRetLog
+											PAX->(MsUnlock())
+										End Transaction
+									EndIf
+								EndIf
+							EndIf
+
+							If ( lPermiteExecutar )
+								If ( SC9->(MsSeek(xFilial("SC9") + SC6->(C6_NUM + C6_ITEM ))))
+
+									If ( Empty(AllTrim(SC9->C9_BLEST)) .And. Empty(AllTrim(SC9->C9_BLCRED)))
+										lPermiteExecutar := .T.
+
+										nPrcVen := SC9->C9_PRCVEN
+										If ( SC5->C5_MOEDA <> 1 )
+											nPrcVen := xMoeda(nPrcVen,SC5->C5_MOEDA,1,dDataBase)
+										EndIf
+
+										AAdd(aPvlDocS,{ SC9->C9_PEDIDO,;
+														SC9->C9_ITEM,;
+														SC9->C9_SEQUEN,;
+														SC9->C9_QTDLIB,;
+														nPrcVen,;
+														SC9->C9_PRODUTO,;
+														.F.,;
+														SC9->(RecNo()),;
+														SC5->(RecNo()),;
+														SC6->(RecNo()),;
+														SE4->(RecNo()),;
+														SB1->(RecNo()),;
+														SB2->(RecNo()),;
+														SF4->(RecNo())})
+									Else
+										cRetLog          := "Não Localizado liberação do Pedido de Venda NUmero " + cPedidoVenda
+										Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cRetLog,{"OK"})
+										lPermiteExecutar := .F.
+									EndIf
+
+								Else
+									lPermiteExecutar := .F.
+									cRetLog          := "Não Localizado liberação do Pedido de Venda NUmero " + cPedidoVenda
+									Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cRetLog,{"OK"})
+									If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+										Begin Transaction
+											PAX->(RecLock("PAX",.F.))
+												PAX->PAX_RETLOG := cRetLog
+											PAX->(MsUnlock())
+										End Transaction
+									EndIf
+								EndIf
+							EndIf
+
+							If ( lPermiteExecutar )
+
+								SetFunName("MATA461")
+
+								cNotaFiscal := MaPvlNfs(aPvlDocS,cSerie, .F., .F., .F., .F., .F., 0, 0, .F., .F., ,{||.t.} ,{||.t.}, {||.t.}, {||.t.})
+
+								If !Empty(cNotaFiscal)
+									cLog       := "Documento de Saída: " + cSerie + "-" + cNotaFiscal + ", gerado com sucesso!!!" + CRLF
+									ShowLogInConsole(cLog)
+
+									cRetLog := "Foi Gerado o Documento Sem Valor Fiscal para Calculo CPV !" + CRLF
+									cRetLog += "Documento de Saída: " + cSerie + "-" + cNotaFiscal + ", gerado com sucesso!!!" + CRLF
+
+									If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+										Begin Transaction
+											PAX->(RecLock("PAX",.F.))
+												PAX->PAX_STATUS := GERADO_SUCESSO
+												PAX->PAX_GERNF  := GERADO_SUCESSO
+												PAX->PAX_DATA   := dDataBase
+												PAX->PAX_RETLOG := cRetLog
+											PAX->(MsUnlock())
+										End Transaction
+									EndIf
+
+									aFinaliza := ValidaEncerramento(cDocMovimento,cFilAnt)
+
+									If Len(aFinaliza) > 0
+										For nFinaliza := 1 To Len(aFinaliza)
+
+											lPassa := .F.
+
+											If ( aFinaliza[nFinaliza][03] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL ))
+												lPassa := .T.
+											Else
+												lPassa := .F.
+												EXIT
+											EndIf
+
+											If ( aFinaliza[nFinaliza][04] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+												lPassa := .T.
+											Else
+												lPassa := .F.
+												EXIT
+											EndIf
+
+											If ( aFinaliza[nFinaliza][05] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+												lPassa := .T.
+											Else
+												lPassa := .F.
+												EXIT
+											EndIf
+
+											If (aFinaliza[nFinaliza][06] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+												lPassa := .T.
+											Else
+												lPassa := .F.
+												EXIT
+											EndIf
+
+											If (aFinaliza[nFinaliza][07] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+												lPassa := .T.
+											Else
+												lPassa := .F.
+												EXIT
+											EndIf
+
+											If (aFinaliza[nFinaliza][08] $ (GERADO_SUCESSO + "/" + NAO_APLICAVEL))
+												lPassa := .T.
+											Else
+												lPassa := .F.
+												EXIT
+											EndIf
+
+											IF ( lPassa )
+												If ( PAX->(dbSeek(xFilial("PAX") + aFinaliza[nFinaliza][02])))
+													Begin Transaction
+														PAX->(RecLock("PAX",.F.))
+															PAX->PAX_STATUS := GERADO_SUCESSO
+														PAX->(MsUnlock())
+													End Transaction
+												EndIf
+											EndIf
+										Next nFinaliza
+									EndIf
+
+									If ( PAY->(dbSeek(xFilial("PAY") + cCodigoProduto + cDocMovimento + cItemMovimento )))
+										Begin Transaction
+											PAY->(RecLock("PAY",.F.))
+												PAY->PAY_STATUS := GERADO_SUCESSO
+												PAY->PAY_AVANCO := MOV_DOCGERADO
+												PAY->PAY_DATA   := dDataBase
+												PAY->PAY_HORA   := Time()
+												PAY->PAY_NUMPED := cPedidoVenda
+												PAY->PAY_NUMNF  := cNotaFiscal
+												PAY->PAY_SERIE  := cSerie
+												PAY->PAY_DTANF  := dDataBase
+											PAY->(MsUnlock())
+										End Transaction
+									EndIf
+								Else
+									cLog    := "Não foi Possivel Gerar Documento de Saída, Favor verificar pedido de vendas!!!" + CRLF
+									ShowLogInConsole(cLog)
+									Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cLog,{"OK"})
+									cRetLog          := "Não foi Possivel Gerar Documento de Saída, Favor verificar pedido de vendas!!!"
+									If ( PAX->(dbSeek(xFilial("PAX") + cDocMovimento )))
+										Begin Transaction
+											PAX->(RecLock("PAX",.F.))
+												PAX->PAX_RETLOG := cRetLog
+											PAX->(MsUnlock())
+										End Transaction
+									EndIf
+								EndIf
+							EndIf
+						EndIf
+					EndIf
+				Else
+					ShowLogInConsole(cRetLog)
+					Aviso("Atenção - ExecAuto( MATA461 ) !!!" ,cRetLog,{"OK"})
+				EndIf
+			EndIf
+		Next nCarrega
+
+		If ( !Empty(cAlias) )
+			dbSelectArea(cAlias)
+			(cAlias)->(dbCloseArea())
+		EndIf
+
+		If ( !Empty(AllTrim(cEmpBkp)))
+			cEmpAnt := cEmpBkp
+			cFilAnt := cFilBkp
+			cNumEmp := cEmpAnt + cFilAnt
+			OpenFile(cNumEmp)
+		EndIf
+
+	EndIf
+
+	RestArea( aArea )
+
+Return
+
+/*
+ 	Gera Validação de Encerramento da movimentação  
+*/
+Static Function ValidaEncerramento(cDocMovimento,cCodFilial)
+	Local aArea                 := {}  as array
+	Local aCheckMovimento       := {}  as array
+	Local cAlias	            := ""  as character
+	Local cQuery	            := ""  as character
+	Local cLog                  := ""  as character
+
+	aArea       	            := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery               := QryCheckValidacao(cDocMovimento,cCodFilial)
+	cAlias               := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		dbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While ((cAlias)->(!EOF()))
+
+				aAdd(aCheckMovimento,{(cAlias)->PAX_FILIAL,;
+									  (cAlias)->PAX_DOC,;
+									  (cAlias)->PAX_CRIAOP,;
+									  (cAlias)->PAX_APTOOP,;
+									  (cAlias)->PAX_TRANSF,;
+									  (cAlias)->PAX_REQUIS,;
+									  (cAlias)->PAX_PVENDA,;
+									  (cAlias)->PAX_GERNF})
+
+				(cAlias)->(dbSkip())
+			EndDo
+		EndIf
+
+		(cAlias)->(dbCloseArea())
+	Else
+
+		cLog += " - Filial: " + cFilAnt + " - Não Localizada"
+	EndIf
+
+	If ( !Empty(cLog) )
+		showLogInConsole(StrTran(cLog,CRLF,", ") )
+	Endif
+
+	RestArea( aArea )
+
+Return aCheckMovimento
+
+/*
+	Monta a Query para Checar os status da PAX
+*/
+Static Function QryCheckValidacao(cDocMovimento,cCodFilial)
+	Local cQuery 	    := ""  as character
+
+	cQuery := " SELECT  " + CRLF
+	cQuery += "		   PAX_FILIAL AS PAX_FILIAL, " + CRLF
+	cQuery += "		   PAX_DOC    AS PAX_DOC,    " + CRLF
+	cQuery += "		   PAX_CRIAOP AS PAX_CRIAOP, " + CRLF
+	cQuery += "		   PAX_APTOOP AS PAX_APTOOP, " + CRLF
+	cQuery += "		   PAX_TRANSF AS PAX_TRANSF, " + CRLF
+	cQuery += "		   PAX_REQUIS AS PAX_REQUIS, " + CRLF
+	cQuery += "		   PAX_PVENDA AS PAX_PVENDA, " + CRLF
+	cQuery += "		   PAX_GERNF  AS PAX_GERNF   " + CRLF
+	cQuery += " FROM   " + CRLF
+	cQuery += " 	   " + RetSQLTab("PAX") + CRLF
+	cQuery += " WHERE  1 = 1 " + CRLF
+	cQuery += "   	   AND PAX_FILIAL = " + ValToSql(cCodFilial) + "  " + CRLF
+	cQuery += "   	   AND PAX_DOC    = " + ValToSql(cDocMovimento) + "  " + CRLF
+	cQuery += "   	   AND " + RetSqlDel("PAX") + CRLF
+
+	u_ChangeQuery("\sql\GeraDocumentoVendaPorto_QryCheckValidacao.sql", @cQuery)
+
+Return cQuery
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,cSintaxeRotina)
+
+Return
+

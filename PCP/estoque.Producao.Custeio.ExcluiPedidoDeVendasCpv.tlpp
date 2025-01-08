@@ -1,0 +1,290 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+#include "ozminerals.ch"
+
+#define APONTA_TOTAL     "T"
+#define APONTA_PARCIAL   "P"
+
+#define OPCAO_INCLUI      3
+#define OPCAO_ALTERA      4
+#define OPCAO_EXCLUI      5
+
+#define  MANUTENCAO_OS    "OS"
+
+#define  PROCESSANDO      "1"
+
+#define  AGUARDANDO       "1"
+#define  GERADO_SUCESSO   "2"
+#define  NAO_APLICAVEL    "3"
+
+#define  PRODUCAO         "1"
+#define  TRANSFERENCIA    "2"
+#define  BAIXA_REQUISICAO "3"
+#define  VENDA_CPV        "4"
+
+#define  MOV_GERADO       "1"
+#define  MOV_CRIAROP      "2"
+#define  MOV_APONTAROP    "3"
+#define  MOV_TRANSFERIR   "4"
+#define  MOV_BAIXAREQ     "5"
+#define  MOV_PEDVENDA     "6"
+#define  MOV_DOCGERADO    "7"
+
+namespace estoque.Producao.Custeio
+
+/*/{Protheus.doc} ExcluiPedidoDeVendasCpv
+
+	Rotina que é chamada pelo rotina ponto de entrada MTA410E, 
+	Retorna o status para em Aberto, apos excluir O pedido de vendas
+
+@type function
+@author Fabio Santos - CRM Service
+@since 08/12/2023
+@version P12
+@database SQL SERVER 
+
+@see OZGENSQL
+@see OZGEN18
+@see MTA410E
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function ExcluiPedidoDeVendasCpv(cPedidoVendas,cCodigoFilial)
+	Local aArea                 := {}  as array
+	Local aCarrega              := {}  as array
+	Local cAlias	            := ""  as character
+	Local cQuery	            := ""  as character
+	Local cLog                  := ""  as character
+
+	Private	cPermiteFilial      := ""  as character
+	Private	cLiberaEmpresa      := ""  as character
+	Private cSintaxeRotina      := ""  as character
+
+	cPermiteFilial              := AllTrim(GetNewPar("OZ_LIBFIL","01"))
+	cLiberaEmpresa              := AllTrim(GetNewPar("OZ_LIBEMP","99"))
+	cSintaxeRotina              := ProcName(0)
+
+	aArea       	            := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery               := getQryListaPedidoVendas(cPedidoVendas,cCodigoFilial)
+	cAlias               := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		dbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While ((cAlias)->(!EOF()))
+
+				If ( AllTrim((cAlias)->PAY_NUMPED) $ AllTrim(cPedidoVendas) )
+
+					aAdd( aCarrega,{(cAlias)->PAY_FILIAL,;
+									(cAlias)->PAY_DOC,;
+									(cAlias)->PAY_ITEM,;
+									(cAlias)->PAY_COD,;
+									(cAlias)->PAY_DESC,;
+									(cAlias)->PAY_TIPO,;
+									(cAlias)->PAY_UM,;
+									(cAlias)->PAY_TM,;
+									(cAlias)->PAY_TES,;
+									(cAlias)->PAY_TPMOV,;
+									(cAlias)->PAY_FILMOV,;
+									(cAlias)->PAY_LOCAL,;
+									(cAlias)->PAY_QTD,;
+									(cAlias)->PAY_COMP,;
+									(cAlias)->PAY_DSCEMP,;
+									(cAlias)->PAY_QTDEMP,;
+									(cAlias)->PAX_DATA,;
+									(cAlias)->PAX_HORA,;
+									(cAlias)->PAX_USER,;
+									(cAlias)->PAY_STATUS,;
+									(cAlias)->PAY_OP,;
+									(cAlias)->PAY_AVANCO,;
+									(cAlias)->PAY_NUMNF,;
+									(cAlias)->PAY_SERIE,;
+									(cAlias)->PAY_NUMPED})
+				EndIf
+
+				(cAlias)->(dbSkip())
+			EndDo
+		EndIf
+
+		(cAlias)->(dbCloseArea())
+	Else
+
+		cLog += " - Filial: " + cFilAnt + " - Não Localizada"
+	EndIf
+
+	If ( Len(aCarrega) > 0 )
+
+		RetornaStatusPedidoVendas(aCarrega,cPedidoVendas,cCodigoFilial)
+	Else
+		cLog += " - Filial: " + cFilAnt + " - Não Existe Dados"
+	EndIf
+
+	If ( !Empty(cLog) )
+		showLogInConsole(StrTran(cLog,CRLF,", ") )
+	Endif
+
+	RestArea( aArea )
+
+Return
+
+/*
+	Monta a Query para carregar dados - Busca na PAY
+*/
+Static Function getQryListaPedidoVendas(cPedidoVendas,cCodigoFilial)
+	Local cQuery 	    := ""  as character
+
+	cQuery := " SELECT " + CRLF
+	cQuery += "		   PAY_FILIAL AS PAY_FILIAL, " + CRLF
+	cQuery += "		   PAY_DOC    AS PAY_DOC,    " + CRLF
+	cQuery += "		   PAY_ITEM   AS PAY_ITEM,   " + CRLF
+	cQuery += "		   PAY_COD    AS PAY_COD,    " + CRLF
+	cQuery += "		   PAY_DESC   AS PAY_DESC,   " + CRLF
+	cQuery += "		   PAY_TIPO   AS PAY_TIPO,   " + CRLF
+	cQuery += "		   PAY_UM     AS PAY_UM,     " + CRLF
+	cQuery += "		   PAY_TM     AS PAY_TM,     " + CRLF
+	cQuery += "		   PAY_TES    AS PAY_TES,    " + CRLF
+	cQuery += "		   PAY_TPMOV  AS PAY_TPMOV,  " + CRLF
+	cQuery += "		   PAY_FILMOV AS PAY_FILMOV, " + CRLF
+	cQuery += "		   PAY_LOCAL  AS PAY_LOCAL,  " + CRLF
+	cQuery += "		   PAY_QTD    AS PAY_QTD,    " + CRLF
+	cQuery += "		   PAY_COMP   AS PAY_COMP,   " + CRLF
+	cQuery += "		   PAY_DSCEMP AS PAY_DSCEMP, " + CRLF
+	cQuery += "		   PAY_QTDEMP AS PAY_QTDEMP, " + CRLF
+	cQuery += "		   PAY_STATUS AS PAY_STATUS, " + CRLF
+	cQuery += "		   PAY_AVANCO AS PAY_AVANCO, " + CRLF
+	cQuery += "		   PAY_NUMNF  AS PAY_NUMNF,  " + CRLF
+	cQuery += "		   PAY_SERIE  AS PAY_SERIE,  " + CRLF
+	cQuery += "		   PAY_NUMPED AS PAY_NUMPED, " + CRLF
+	cQuery += "		   PAY_OP     AS PAY_OP,     " + CRLF
+	cQuery += "		   PAX_DATA   AS PAX_DATA,   " + CRLF
+	cQuery += "		   PAX_HORA   AS PAX_HORA,   " + CRLF
+	cQuery += "		   PAX_USER   AS PAX_USER    " + CRLF
+	cQuery += " FROM   " + CRLF
+	cQuery += " 	   " + RetSQLTab("PAY") + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              " + RetSQLTab("SB1") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND PAY_COD  = B1_COD    " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("SB1")   + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              " + RetSQLTab("PAX") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND PAY_FILIAL  = PAX_FILIAL " + CRLF
+	cQuery += " 				  AND PAY_DOC     = PAX_DOC    " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("PAX") + CRLF
+	cQuery += " WHERE  1 = 1 " + CRLF
+	cQuery += "   	   AND PAY_FILIAL   = " + ValToSql(cCodigoFilial)  + "  " + CRLF
+	cQuery += "   	   AND PAY_NUMPED   = " + ValToSql(cPedidoVendas)  + "  " + CRLF
+	cQuery += "   	   AND PAY_TPMOV    = " + ValToSql(VENDA_CPV)      + "  " + CRLF
+	cQuery += "   	   AND PAY_STATUS   = " + ValToSql(GERADO_SUCESSO) + "  " + CRLF
+	cQuery += "   	   AND PAY_AVANCO   = " + ValToSql(MOV_PEDVENDA)   + "  " + CRLF
+	cQuery += "   	   AND " + RetSqlDel("PAY")  + CRLF
+	cQuery += " ORDER BY PAY_ITEM " + CRLF
+
+	u_ChangeQuery("\sql\ExcluiPedidoDeVendasCpv_getQryListaPedidoVendas.sql", @cQuery)
+
+Return cQuery
+
+/*
+	Executa o Retorno do Status da Tabeka PAY/PAX
+*/
+Static Function RetornaStatusPedidoVendas(aCarrega,cPedidoVendas,cCodigoFilial)
+	Local aArea             := {}  as array
+	Local nCarrega          := 0   as integer
+	Local cLog              := ""  as character
+	Local cAlias	        := ""  as character
+	Local cCodigoProduto    := ""  as character
+	Local cItemMovimento    := ""  as character
+	Local cDocMovimento     := ""  as character
+	Local cNumPedidoVendas  := ""  as character
+	Local cRetLog           := ""  as character
+
+	aArea       	        := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	If ( Len(aCarrega) > 0 )
+
+		dbSelectArea("PAX")
+		PAX->(dbSetOrder(1))
+
+		dbSelectArea("PAY")
+		PAY->(dbSetOrder(2))
+
+		For nCarrega:=1 To Len(aCarrega)
+
+			If ( AllTrim(cCodigoFilial) $ AllTrim(cPermiteFilial) )
+
+				cDocMovimento    := aCarrega[nCarrega][02]
+				cItemMovimento   := aCarrega[nCarrega][03]
+				cCodigoProduto   := aCarrega[nCarrega][04]
+				cNumPedidoVendas := aCarrega[nCarrega][25]
+
+				If ( AllTrim(cNumPedidoVendas) $ AllTrim(cPedidoVendas)) 
+
+					cLog       := "Pedido de Vendas Excluido com sucesso " + CRLF
+					ShowLogInConsole(cLog)
+
+					cRetLog := "Pedido de Vendas Excluido com sucesso  " + cNumPedidoVendas + CRLF
+					If ( PAX->(dbSeek(cCodigoFilial + cDocMovimento )))
+						Begin Transaction
+							PAX->(RecLock("PAX",.F.))
+							PAX->PAX_STATUS := AGUARDANDO
+							PAX->PAX_PVENDA := AGUARDANDO
+							PAX->PAX_DATA   := dDataBase
+							PAX->(MsUnlock())
+						End Transaction
+					EndIf
+
+					If ( PAY->(dbSeek(cCodigoFilial + cCodigoProduto + cDocMovimento + cItemMovimento )))
+						Begin Transaction
+							PAY->(RecLock("PAY",.F.))
+							PAY->PAY_STATUS := AGUARDANDO
+							PAY->PAY_AVANCO := MOV_GERADO
+							PAY->PAY_DATA   := CTOD("")
+							PAY->PAY_HORA   := ""
+							PAY->PAY_NUMPED := ""
+							PAY->PAY_NUMNF  := ""
+							PAY->PAY_SERIE  := ""
+							PAY->PAY_DTANF  := CTOD("")
+							PAY->(MsUnlock())
+						End Transaction
+					EndIf
+				EndIf
+			EndIf
+		Next nCarrega
+
+		If ( !Empty(cAlias) )
+			dbSelectArea(cAlias)
+			(cAlias)->(dbCloseArea())
+		EndIf
+
+	EndIf
+
+	RestArea( aArea )
+
+Return
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,cSintaxeRotina)
+
+Return
+
