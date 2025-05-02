@@ -1,0 +1,224 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+#include "ozminerals.ch"
+
+#define STATUS_NAO_ENVIADO      	"0"
+#define STATUS_PROCESSANDO  		"1"
+#define STATUS_FINALIZADO      		"2"
+#define STATUS_PENDENCIA            "3"
+
+#define RASTRO      				"L"
+#define ENDERECO   			        "S"
+#define LOCALIZACAO			        "N"
+#define ORIGEM_PRODUTO				"0"
+#define CONTROLE_WMS				"2"
+#define IMPOSTO_CSLL  				"2"
+#define CUSTO_MOEDA 				"1"
+#define TIPO_CQ    				    "M"
+
+#define TIPO_PR0   					"PR0/PR1"
+#define TIPO_TRF   					"RE4/DE4"
+#define TIPO_REQ   					"PR0/RE1"
+
+#define TP_R4   					"R4"
+#define TP_D4   					"D4"
+#define TP_R0   					"R"
+#define TP_D0   					"D"
+
+#define TIPO_PA						"PA"
+#define TIPO_PI						"PI"
+
+#define INCLUI_EST  				 3
+
+#define REGISTRO_ATUALIZADO         "Registro Atualizado"
+#define REGISTRO_NAO_ATUALIZADO     "Registro Não Atualizado"
+
+#define MOEDA_01    				"01"
+#define MOEDA_02    				"02"
+#define MOEDA_03   					"03"
+#define MOEDA_04    				"04"
+#define MOEDA_05    				"05"
+
+#define TIPO_CX      				"CX"
+#define TIPO_DP     				"DP"
+
+#define GRAVA_FLAG  				"1"
+
+#define OP_MANUTENCAO				"OS"
+
+#define STATUS_RECORD    		     1
+#define STATUS_NO_RECORD 		     2
+
+namespace estoque.Producao.Custeio
+
+/*/{Protheus.doc} AjustaCustoEmParteCaixaDepreciacao
+
+	Rotina que é chamada pelo Ponto de entrada MA330FIM
+    Ajusta variação custo em partes na tabela SD3 - Movimento de Estoque - OZminerals 
+
+	Function MA330Process - Função de processamento da rotina de recalculo do custo medio
+							Executada após todo o processamento do recalculo do custo medio para 
+							que se possa realizar customizações no final da rotina.
+
+	Tdn : https://tdn.totvs.com/pages/releaseview.action?pageId=6087635
+
+@type function
+@author Fabio Santos - CRM Service
+@since 01/10/2023
+@version P12
+@database SQL SERVER 
+
+@Obs
+	
+    Tratamento das Queries: 
+
+	QryProducaoCustoParte := Busca as infoções na tabela SD3
+
+    Parametros: 
+
+	OZ_LIBFIL : Contem as Filiais para calculo do Custo
+	OZ_TIPOPT : Contem o conteudo do campo D3_CF
+	OZ_TPMVPT : Contem o Conteudo do campo D3_TIPO
+
+@see MA330FIM
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function AjustaCustoEmParteCaixaDepreciacao()
+	Local aArea                   := {}  as array
+
+	Private	cPermiteFilial        := ""  as character
+	Private cBuscaProduto         := ""  as character
+	Private cLocalEstoque         := ""  as character
+	Private cMovimentoEstoque     := ""  as character
+	Private cTipoProduto          := ""  as character
+	private cSintaxeRotina        := ""  as character
+
+	cPermiteFilial                := AllTrim(GetNewPar("OZ_LIBFIL","06/02"))
+	cMovimentoEstoque             := AllTrim(GetNewPar("OZ_TIPOPT","PR0/RE0/RE1/RE4/DE4"))
+	cTipoProduto                  := AllTrim(GetNewPar("OZ_TPMVPT","CX/DP/PI/PA"))
+	cSintaxeRotina                := ProcName(0)
+	aArea  		                  := GetArea()
+	
+	ProducaoValorCustoParte()
+
+	RestArea(aArea)
+
+Return
+
+/*
+ 	Retorna o valor do custo em partes tabela SD3
+*/
+Static Function ProducaoValorCustoParte()
+	Local aArea             := {}  as array
+	Local cAlias	        := ""  as character
+	Local cQuery	        := ""  as character
+
+	aArea      	            := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery               := QryProducaoCustoParte()
+	cAlias               := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		DbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While (cAlias)->(!EOF())
+
+				dbSelectArea("SD3")
+				SD3->(dbSetOrder(3))
+				If ( SD3->(dbSeek((cAlias)->D3_FILIAL + (cAlias)->D3_COD + ;
+						(cAlias)->D3_LOCAL + (cAlias)->D3_NUMSEQ + (cAlias)->D3_CF )))
+
+					Begin Transaction
+						SD3->(RecLock("SD3",.F.))
+							SD3->D3_XVLRCXA  := (SD3->D3_CP0101+SD3->D3_CP0301)
+							SD3->D3_XVLRDPR  := SD3->D3_CP0201
+							SD3->D3_XDLRCXA  := (SD3->D3_CP0102+SD3->D3_CP0302)
+							SD3->D3_XDLRDPR  := SD3->D3_CP0202 
+							SD3->D3_CP0101   := (SD3->D3_CP0101+SD3->D3_CP0301)
+							SD3->D3_CP0102   := (SD3->D3_CP0102+SD3->D3_CP0302)
+							SD3->D3_CP0301   := 0
+							SD3->D3_CP0302   := 0
+						SD3->(MsUnlock())
+					End Transaction
+				EndIf
+
+				(cAlias)->(dbSkip())
+			Enddo
+
+			(cAlias)->(DbCloseArea())
+		EndIf
+	EndIf
+
+	RestArea(aArea)
+
+Return
+
+/*
+    Query para retornar o custo da movimentação com a TM 588 
+*/
+Static Function QryProducaoCustoParte()
+	Local cQuery         := ""  as character
+
+	cQuery := "SELECT " + CRLF
+	cQuery += "      D3_FILIAL  AS D3_FILIAL,  " + CRLF
+	cQuery += "      D3_COD     AS D3_COD,     " + CRLF
+	cQuery += "      D3_CF      AS D3_CF,      " + CRLF
+	cQuery += "      D3_TM      AS D3_TM,      " + CRLF
+	cQuery += "      D3_OP      AS D3_OP,      " + CRLF
+	cQuery += "      D3_LOCAL   AS D3_LOCAL,   " + CRLF
+	cQuery += "      D3_NUMSEQ  AS D3_NUMSEQ,  " + CRLF
+	cQuery += "      D3_XOPER   AS D3_XOPER,   " + CRLF
+	cQuery += "      D3_QUANT   AS D3_QUANT,   " + CRLF
+	cQuery += "	     D3_CUSTO1  AS D3_CUSTO1,  " + CRLF
+	cQuery += "		 D3_CUSTO2  AS D3_CUSTO2,  " + CRLF
+	cQuery += "	     D3_CP0101  AS D3_CP0101,  " + CRLF
+	cQuery += "		 D3_CP0102  AS D3_CP0102,  " + CRLF
+	cQuery += "	     D3_CP0201  AS D3_CP0201,  " + CRLF
+	cQuery += "		 D3_CP0202  AS D3_CP0202,  " + CRLF
+	cQuery += "	     D3_CP0301  AS D3_CP0301,  " + CRLF
+	cQuery += "		 D3_CP0302  AS D3_CP0302   " + CRLF
+	cQuery += "FROM  " + RetSqlTab("SD3") + " (NOLOCK)  " + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              "+ RetSQLTab("SBZ") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND D3_FILIAL = BZ_FILIAL " + CRLF
+	cQuery += " 				  AND D3_COD    = BZ_COD    " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("SBZ")    + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              "+ RetSQLTab("SB1") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += "      			  AND D3_COD = B1_COD " + CRLF
+	cQuery += "      			  AND " + RetSqlDel("SB1") + CRLF
+	cQuery += "WHERE   1=1  " + CRLF
+	cQuery += "        AND D3_FILIAL  IN " + FormatIn(cPermiteFilial, "/")    + " " + CRLF
+	cQuery += "		   AND D3_CF      IN " + FormatIn(cMovimentoEstoque, "/") + " " + CRLF
+	cQuery += "		   AND D3_TIPO    IN " + FormatIn(cTipoProduto, "/")      + " " + CRLF
+	cQuery += "        AND D3_ESTORNO =  ' ' " + CRLF
+	cQuery += "        AND SUBSTRING(D3_EMISSAO,1,6) = " + ValToSql(Substr(Dtos(ddatabase),1,6)) + "  " + CRLF
+	cQuery += "        AND SUBSTRING(D3_OP,7,2) <> " + ValToSql(OP_MANUTENCAO) + " " + CRLF
+	cQuery += "        AND " + RetSqlDel("SD3") + CRLF
+	cQuery += "ORDER BY  D3_NUMSEQ, B1_TIPO, D3_TM, D3_CF  DESC  " + CRLF
+
+	u_ChangeQuery("\sql\AjustaCustoEmParteCaixaDepreciacao_QryProducaoCustoParte.sql",@cQuery)
+
+Return cQuery
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,cSintaxeRotina)
+
+Return

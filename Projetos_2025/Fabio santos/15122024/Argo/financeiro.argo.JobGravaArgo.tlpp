@@ -1,0 +1,107 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+#include "ozminerals.ch"
+
+namespace financeiro.argo
+
+/*/{Protheus.doc} JobGravaArgo
+
+    Schedule para gravar as informações no financeiro processo argo - OZminerals 
+
+@type function
+@author Fabio Santos 
+@since 08/06/2024
+@version P12
+@database SQL SERVER 
+
+@see libOZminerals.u_runJOB
+@see financeiro.argo.u_JobGravaArgo
+@See u_OZ34WS03()
+
+@example *parâmetros manualmente caso seja um debug direto no Vs Code*
+
+@example    I  )Usar esses parâmetros manualmente caso seja um debug direto no Vs Code.
+
+@example         a) Chamar a rotina financeiro.argo.u_JobGravaArgo()
+@example         b) aParams := {"02","01","004101","000222000012"} 
+
+@example    II )Explicação de como preencher o parametro e executar a rotina: 
+
+@example            a) Executar a rotina financeiro.argo.u_JobGravaArgo()
+@example            b) No inicio do fonte colocar ponto de parada e executar 
+					   aParams := {"02","01","004101","000222000012"}
+@example            c) "02" é a Empresa e "01" é a Filial
+
+@example    III)Quanto estiver em ambiente de teste deve ser analisado os parametros abaixo, 
+@example        que constam no fonte libOZminerals.Utils.tlpp 
+
+@example            a) OT_DBPROD  - Deve ser informado o ALIAS DO BANCO DE DADOS 
+@example            b) OT_DBSPROD - Deve ser informado o IP do DBACESS 
+@example            c) OT_OWNEPRD - Deve ser informado o nome do banco no SQL ou ORACLE
+@example            d) OT_BDSQLPR - Deve ser informado o ALIAS DO BANCO DE DADOS 
+
+@example	IV )No Schedule deve ser configurado a rotina conforme exemplo abaixo:
+
+@example            a) financeiro.argo.u_JobGravaArgo()  
+@example                Obs: A Rotina (libOZminerals.u_runJOB) é um framework e trata as empresas e filiais, 
+@example                     O usuário somente Precisa preencher a rotina desejada no SCHEDULE sem parametros.        
+@example            b) Caso tenha varias empresas e filiais, deve ser configurado uma chamada para cada empresa, 
+@example            passando somente as filiais. 
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function JobGravaArgo(aParams)
+	Local cJobCode          := ""         as character
+	Local cRoutineToExecute := ""         as character
+	Local cJobName          := ""         as character
+	Local cLoginUser        := ""         as character
+	Local cUseIniFile		:= ""         as character
+	Local nIndexParams		:= 0          as numeric
+	Local aScheduleParam	:= {}         as array
+
+	cJobCode          := "financeiro.argo.u_JobGravaArgo()"
+	cRoutineToExecute := "u_OZ34WS03()"
+	cJobName          := "Job para gravar informações ARGO - OZminerals"
+	cLoginUser        := "N"
+	cUseIniFile		  := "S"
+
+	If ( ValType(aParams) == "U" )
+
+		aParams        := {}
+
+		aAdd( aParams, cJobCode )
+		aAdd( aParams, cJobName )
+		aAdd( aParams, cRoutineToExecute )
+		aAdd( aParams, cLoginUser )
+		aAdd( aParams, cUseIniFile )
+
+		libOZminerals.u_runJOB(aParams)
+	Else
+
+		If ( ValType(aParams) == "A" .And. Len(aParams) > 0 )
+
+			aScheduleParam := {}
+
+			aAdd( aScheduleParam, cJobCode )
+			aAdd( aScheduleParam, cRoutineToExecute )
+			aAdd( aScheduleParam, cLoginUser )
+			For nIndexParams:=1 to Len(aParams)
+				aAdd( aScheduleParam, aParams[nIndexParams] )
+			Next nIndexParams
+
+			libOZminerals.u_runJOB(aScheduleParam)
+		Endif
+	EndIf
+Return
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,cSintaxeRotina)
+
+Return
+

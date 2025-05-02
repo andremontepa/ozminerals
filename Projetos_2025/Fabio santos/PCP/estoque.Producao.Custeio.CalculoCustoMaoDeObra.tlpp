@@ -1,0 +1,640 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+#include "ozminerals.ch"
+
+#define STATUS_NAO_ENVIADO      	"0"
+#define STATUS_PROCESSANDO  		"1"
+#define STATUS_FINALIZADO      		"2"
+#define STATUS_PENDENCIA            "3"
+
+#define RASTRO      				"L"
+#define ENDERECO   			        "S"
+#define LOCALIZACAO			        "N"
+#define ORIGEM_PRODUTO				"0" 
+#define CONTROLE_WMS				"2" 
+#define IMPOSTO_CSLL  				"2" 
+#define CUSTO_MOEDA 				"1"
+#define TIPO_CQ    				    "M"
+
+#define TIPO_PR0   					"PR0"
+#define TIPO_PR1   					"PR1"
+
+#define TIPO_PA						"PA"
+#define TIPO_PI						"PI"
+
+#define INCLUI_EST  				 3 
+
+#define REGISTRO_ATUALIZADO         "Registro Atualizado"
+#define REGISTRO_NAO_ATUALIZADO     "Registro Não Atualizado"
+
+#define MOEDA_01    				"01"
+#define MOEDA_02    				"02"
+#define MOEDA_03   					"03"
+#define MOEDA_04    				"04"
+#define MOEDA_05    				"05"
+
+#define CONTA_CAIXA    				"CX"
+#define CONTA_DEPRECIACAO			"DP"
+
+#define GRUPO_CONTA_CAIXA           "6"
+#define GRUPO_CONTA_DEPRECIACAO     "7"
+
+#define GRAVA_FLAG  				"1"
+
+#define OP_MANUTENCAO				"OS"
+  
+#define STATUS_RECORD    		     1
+#define STATUS_NO_RECORD 		     2
+
+namespace estoque.Producao.Custeio
+
+/*/{Protheus.doc} CalculoCustoMaoDeObra
+
+	Rotina que é chamada pelo Ponto de entrada MA330MOD 
+    para o tratamento do custeio Mão de Obra - OZminerals 
+
+@type function
+@author Fabio Santos - CRM Service
+@since 01/10/2023
+@version P12
+@database SQL SERVER 
+
+@history 12/03/2024, Fabio Santos, Foi criado o parametro OZ_CALCFIL para permitir pegar os valores de todas as filiais 
+
+@obs
+
+	Patametro OZ_PRODTP    	  
+		Deve Ser Preenchido o Tipo do Produto seguido de "/" - Barra - Exemplo PA/PI
+
+	Ponto de Atenção:
+
+		Na Query de Produtos não poder ser alterado a clausula Order by
+
+		Esta ordenado pelo criterio abaixo:
+		B1_COD,
+		B1_CCCUSTO,
+		B1_ITEMCC,
+		B1_CLVL    
+
+    Tratamento das Queries: 
+
+		GetQryTabelaPaz : Tabela Temporaria para melhorar a performance do processo
+		GetQryProdutos  : Busca os Produtos Mao de Obra para Apropriação do Custo
+		GetQryMovimento : Busca as quantidades movimentadas na tabela SD3 - PCP
+		GetQryContabil  : Busca os valores na Contabilidade pelo centro de custo e item contabil 
+
+@see MA330MOD
+@see OZGENSQL
+@see OZGEN18
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function CalculoCustoMaoDeObra(cPesqCodigoProduto)
+	Local aArea              := {}  as array
+	Local aCustoContabil     := {}  as array
+	Local cPesqCentroDeCusto := ""  as character
+	Local cPesqCentroCusteio := ""  as character
+	Local cPesqItemContabil  := ""  as character
+	Local cAlias             := ""  as character
+	Local cQuery             := ""  as character
+	Local cProduto           := ""  as character
+	Local cLocalPadrao       := ""  as character
+	Local cCentroCusteio     := ""  as character
+	Local cCodCentroCusto    := ""  as character
+	Local cItemContabil      := ""  as character
+	Local cTipoProduto       := ""  as character
+	Local cGrpContaContabil  := ""  as character
+	Local cCodigoFilial      := ""  as character
+	Local cCodFilial         := ""  as character 
+	Local nValorCusto        := 0   as Integer
+	Local nQtdeCusto         := 0   as Integer
+	Local nValorTotal        := 0   as Integer
+	Local nQtdeTotal         := 0   as Integer
+	Local nPercentual        := 0   as Integer 
+	Local lPermite           := .T. as Logical
+
+	Private cSintaxeRotina   := ""  as character
+	Private cProdutoCxaDpr   := ""  as character
+	
+	cSintaxeRotina           := ProcName(0)
+	cLocalPadrao             := Posicione("SB1",1,xFilial("SB1")+PADR(cPesqCodigoProduto,15),"B1_LOCPAD")
+	cPesqCentroDeCusto       := Posicione("SB1",1,xFilial("SB1")+PADR(cPesqCodigoProduto,15),"B1_CC")
+	cPesqCentroCusteio       := Posicione("SB1",1,xFilial("SB1")+PADR(cPesqCodigoProduto,15),"B1_CCCUSTO")
+	cPesqItemContabil        := Posicione("SB1",1,xFilial("SB1")+PADR(cPesqCodigoProduto,15),"B1_ITEMCC")
+	cProdutoCxaDpr           := GetNewPar("OZ_PRODTP","DP/CX")
+	aArea                    := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	dbSelectArea("PAZ")
+	PAZ->(dbSetOrder(1)) 
+	If ( PAZ->(dbSeek(xFilial("PAZ") + cPesqCodigoProduto + cPesqCentroCusteio  + cPesqItemContabil )))
+
+		If (Alltrim(PAZ->PAZ_COD)    $ Alltrim(cPesqCodigoProduto) .And.; 
+		    Alltrim(PAZ->PAZ_CC)     $ Alltrim(cCentroCusteio)     .And.;
+		    Alltrim(PAZ->PAZ_ITEMCT) $ Alltrim(cItemContabil) )
+
+			lPermite := .F.
+		EndIf 
+	EndIf 
+	
+	If ( lPermite )
+		aCustoContabil := {}
+		cAlias         := ""
+		cQuery         := ""
+
+		If ( !Empty(cAlias) )
+			dbSelectArea(cAlias)
+			(cAlias)->(dbCloseArea())
+		EndIf
+
+		cQuery         := GetQryProdutos(cPesqCodigoProduto)
+		cAlias         := MpSysOpenQuery(cQuery)
+
+		If ( !Empty(cAlias) )
+
+			dbSelectArea(cAlias)
+
+			If ( (cAlias)->(!EOF()) )
+
+				While (cAlias)->(!Eof())
+
+					nValorCusto        := 0
+					nQtdeCusto         := 0
+					nPercentual        := 0
+					cCentroCusteio     := ""
+					cItemContabil      := ""
+					cCodFilial         := (cAlias)->D3_FILIAL
+					cProduto           := (cAlias)->B1_COD
+					cLocalPad          := (cAlias)->BZ_LOCPAD
+					cCodCentroCusto    := (cAlias)->B1_CC
+					cTipoProduto       := (cAlias)->B1_TIPO
+					cCentroCusteio     := (cAlias)->B1_CCCUSTO
+					cItemContabil      := (cAlias)->B1_ITEMCC
+					cGrpContaContabil  := (cAlias)->B1_XTPCTBA
+					nPercentual        := (cAlias)->G1_XPERC
+
+					If ( cTipoProduto $ CONTA_CAIXA )
+						cTipoProduto := CONTA_CAIXA
+					EndIf 
+
+					If ( cTipoProduto $ CONTA_DEPRECIACAO )
+						cTipoProduto := CONTA_DEPRECIACAO
+					EndIf 
+
+					If ( Alltrim((cAlias)->D3_FILIAL) <> Alltrim((cAlias)->G1_FILDEST))
+						cCodigoFilial := Alltrim((cAlias)->G1_FILDEST)
+					Else 
+						 cCodigoFilial := Alltrim((cAlias)->D3_FILIAL)
+					EndIf 
+
+					nQtdeCusto       := GetQuantidadeCusto( dInicio         ,;
+															cCodCentroCusto ,;
+															cCentroCusteio  ,;
+															cItemContabil   ,;
+															cProduto        ,;
+															cTipoProduto    ,;
+															cLocalPad        )
+
+					nValorCusto       := GetValorCusto( dInicio          ,;
+														cCodCentroCusto  ,;
+														cCentroCusteio   ,;
+														cItemContabil    ,;    
+														cTipoProduto     ,;
+														cGrpContaContabil,;
+														cCodigoFilial    )
+					If ( abs( nValorCusto) > 0 )
+						If nPercentual >= 1
+							nValorTotal   += nValorCusto
+						Else 
+							nValorTotal   += (nValorCusto * nPercentual)
+						EndIf 
+					EndIf
+
+					If ( abs( nQtdeCusto )  > 0 )
+						nQtdeTotal    += nQtdeCusto
+					EndIf
+
+					(cAlias)->(dbSkip())
+
+					If  ( (cAlias)->(EOF()) .Or. cCentroCusteio <> (cAlias)->B1_CCCUSTO ;
+											.Or. cItemContabil  <> (cAlias)->B1_ITEMCC )
+
+						If ( ( ABS( nValorTotal ) > 0 ) .Or. ( ABS( nQtdeTotal ) > 0 ) )
+
+							aAdd(aCustoContabil,{cProduto,;
+												 cLocalPad,;
+												 cCentroCusteio,;
+												 nValorTotal,;
+												 nQtdeTotal,;
+												 cItemContabil,;
+												 cCodCentroCusto,;
+												 cCodFilial})
+						EndIf
+						nValorTotal     := 0
+						nValorCusto     := 0
+						nQtdeTotal      := 0
+						nQtdeCusto      := 0
+						cProduto        := ""
+						cLocalPad       := ""
+						cCentroCusteio  := ""
+						cCodCentroCusto := ""
+						cItemContabil   := ""
+					EndIf
+				Enddo
+
+				(cAlias)->(DbCloseArea())
+			EndIf
+		EndIf
+
+		If ( len(aCustoContabil) > 0 )
+
+			GetAtualizaValoresDoCusto(aCustoContabil)
+		EndIf
+	Else 
+		ShowLogInConsole("Calculo do Custo Não executado")
+	EndIf
+
+	RestArea(aArea)
+
+Return Nil
+
+/*
+    Tratamento para Gravar o calculo do Custo da mão obra
+*/
+Static Function GetAtualizaValoresDoCusto(aCustoContabil)
+	Local aArea              := {}  as array
+	Local nContaCusto        := 0   as Integer
+	Local nSequenciaItem     := 0   as Integer
+	Local lPodeExecutar      := .F. as logical
+	Local lReckLock          := .F. as logical
+	Local cCampoCentroCusto  := ""  as character
+	Local cListaCentroCusto  := ""  as character
+	Local cCodigoFilial      := ""  as character
+
+	aArea            		 := GetArea()
+
+	If  ( len(aCustoContabil) > 0 )
+
+		For nContaCusto := 1 To len(aCustoContabil)
+
+			lPodeExecutar := .F.
+
+			If ( aCustoContabil[nContaCusto][04] > 0 .Or. aCustoContabil[nContaCusto][05] > 0  )
+
+				nSequenciaItem := nContaCusto
+
+				dbSelectArea("SB1")
+				SB1->(dbSetOrder(1))
+				If ( SB1->(dbSeek(xFilial("SB1") + PAD(aCustoContabil[nContaCusto][01],TAMSX3("B1_COD")[1]) )))
+
+					cListaCentroCusto   := aCustoContabil[nContaCusto][03]
+					cCodigoFilial       := aCustoContabil[nContaCusto][08]
+					cCampoCentroCusto   := SB1->B1_CCCUSTO
+
+					Begin Transaction
+						
+						dbSelectArea("SB2")
+						SB2->(dbSetOrder(1))
+						If ( SB2->(dbSeek(PAD(cCodigoFilial,TAMSX3("B2_FILIAL")[1]) + ;
+						                  PAD(aCustoContabil[nContaCusto][01],TAMSX3("B2_COD")[1]) +;
+								          PAD(aCustoContabil[nContaCusto][02],TAMSX3("B2_LOCAL")[1]) )))
+							If ( AllTrim(cListaCentroCusto) $ AllTrim(cCampoCentroCusto) )
+								If ( AllTrim(aCustoContabil[nContaCusto][06]) $ AllTrim(SB1->B1_ITEMCC) )
+									lPodeExecutar := .T.
+								EndIf
+							Else 
+	
+								lPodeExecutar := .F.
+							EndIf
+						Else
+							If ( AllTrim(cListaCentroCusto) $ AllTrim(cCampoCentroCusto) )
+								If ( AllTrim(aCustoContabil[nContaCusto][06]) $ AllTrim(SB1->B1_ITEMCC) )
+									lPodeExecutar := .T.
+								EndIf
+							Else 
+	
+								lPodeExecutar := .F.
+							EndIf
+						EndIf
+
+						If  ( lPodeExecutar )
+
+							If ( Alltrim(SB2->B2_FILIAL) $  cCodigoFilial .And. ; 
+							     Alltrim(SB2->B2_COD)    $ Alltrim(aCustoContabil[nContaCusto][01]) .And. ;
+							     Alltrim(SB2->B2_LOCAL)  $ Alltrim(aCustoContabil[nContaCusto][02]) )
+							   lReckLock     := .F.
+							Else 
+							   lReckLock     := .T.
+							EndIf 
+							
+							Begin Transaction
+								SB2->(RecLock("SB2",lReckLock))
+									SB2->B2_FILIAL  := (cCodigoFilial)
+									SB2->B2_LOCAL   := (aCustoContabil[nContaCusto][02])
+									SB2->B2_COD     := (aCustoContabil[nContaCusto][01])
+									SB2->B2_QFIM    := (aCustoContabil[nContaCusto][05] * -1)
+									SB2->B2_QATU    := (aCustoContabil[nContaCusto][05] * -1)
+									SB2->B2_CM1     := (aCustoContabil[nContaCusto][04] / aCustoContabil[nContaCusto][05]  )
+									SB2->B2_VFIM1   := (aCustoContabil[nContaCusto][04] / aCustoContabil[nContaCusto][05]  ) * aCustoContabil[nContaCusto][05]
+									SB2->B2_VATU1   := (aCustoContabil[nContaCusto][04] / aCustoContabil[nContaCusto][05]  ) * aCustoContabil[nContaCusto][05]
+									SB2->B2_CM2     := (aCustoContabil[nContaCusto][04] / aCustoContabil[nContaCusto][05]  )  / RecMoeda(ddatabase,2) 
+									SB2->B2_VFIM2   := (aCustoContabil[nContaCusto][04] / aCustoContabil[nContaCusto][05]  ) * ( aCustoContabil[nContaCusto][05] / RecMoeda(ddatabase,2))
+									SB2->B2_VATU2   := (aCustoContabil[nContaCusto][04] / aCustoContabil[nContaCusto][05]  ) * ( aCustoContabil[nContaCusto][05] / RecMoeda(ddatabase,2))
+									SB2->B2_CM3     := 0
+									SB2->B2_VFIM3   := 0
+									SB2->B2_VATU3   := 0
+									SB2->B2_CM4     := 0
+									SB2->B2_VFIM4   := 0
+									SB2->B2_VATU4   := 0
+									SB2->B2_CM5     := 0
+									SB2->B2_VFIM5   := 0
+									SB2->B2_VATU5   := 0
+									SB2->B2_CMFIM1  := ((aCustoContabil[nContaCusto][04] / aCustoContabil[nContaCusto][05] ))
+									SB2->B2_CMFIM2  := ((aCustoContabil[nContaCusto][04] / aCustoContabil[nContaCusto][05] ) / RecMoeda(ddatabase,2))
+									SB2->B2_CMFIM3  := 0
+									SB2->B2_CMFIM4  := 0
+									SB2->B2_CMFIM5  := 0
+									SB2->B2_DMOV    := ddatabase
+									SB2->B2_QTSEGUM := 0
+								SB2->(MsUnLock())
+
+							End Transaction
+						EndIf
+
+						lReckLock     := .F.
+						lPodeExecutar := .F.
+
+						dbSelectArea("PAZ")
+						PAZ->(dbSetOrder(1) ) 
+						If ( PAZ->(dbSeek(xFilial("PAZ") + PAD(aCustoContabil[nContaCusto][01],TAMSX3("PAZ_COD")[1]) +;
+														   PAD(cListaCentroCusto,TAMSX3("PAZ_CC")[1]) +;
+														   PAD(aCustoContabil[nContaCusto][06],TAMSX3("PAZ_ITEMCT")[1]) )))
+							lReckLock     := .F.
+							lPodeExecutar := .T.
+						Else
+							lReckLock     := .T.
+							lPodeExecutar := .T.
+						EndIf
+
+						If ( lPodeExecutar )
+
+							Begin Transaction
+	
+								PAZ->(RecLock("PAZ",lReckLock))
+									PAZ->PAZ_FILIAL := xFilial("PAZ")
+									PAZ->PAZ_ITEM   := StrZero(nSequenciaItem,6)
+									PAZ->PAZ_COD    := aCustoContabil[nContaCusto][01]
+									PAZ->PAZ_CC     := cListaCentroCusto
+									PAZ->PAZ_ITEMCT := aCustoContabil[nContaCusto][06]
+									PAZ->PAZ_FLAG   := GRAVA_FLAG
+									PAZ->PAZ_DATA   := ddatabase
+									PAZ->PAZ_HORA   := TIME()
+								PAZ->(MsUnLock())
+	
+							End Transaction
+						EndIf
+
+					End Transaction
+				EndIf
+			EndIf
+
+		Next nContaCusto
+	EndIf
+
+	RestArea(aArea)
+
+Return nil
+
+/*
+    Tratamento para Carregar a Quantidade Produzida para o Calculo do Custo Mao de Obra
+*/
+Static Function GetQuantidadeCusto(dDataCusto,cCentroCusto,cCentroCusteio,cItemContabil,cPesqCodigoProduto,cTipoProduto,cLocalPad)
+	Local aArea      := {}  as array
+	Local nQtdeCusto := 0   as Integer
+	Local cAlias     := ""  as character
+	Local cQuery     := ""  as character
+
+	aArea      		 := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery           := GetQryMovimento(dDataCusto,cCentroCusto,cCentroCusteio,cItemContabil,cPesqCodigoProduto,cTipoProduto,cLocalPad)
+	cAlias           := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		DbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While (cAlias)->(!EOF())
+
+				nQtdeCusto  := (cAlias)->QTDE
+
+				(cAlias)->(dbSkip())
+			Enddo
+
+			(cAlias)->(DbCloseArea())
+		EndIf
+	EndIf
+
+	RestArea(aArea)
+
+Return nQtdeCusto
+
+/*
+    Retorna o valor do custo apurado na contabilidade
+*/
+Static Function GetValorCusto(dDataCusto,cCentroCusto,cCentroCusteio,cItemContabil,cTipoProduto,cGrpContaContabil,cCodigoFilial)
+	Local aArea       := {}  as array
+	Local nValorCusto := 0   as Integer
+	Local cAlias      := ""  as character
+	Local cQuery      := ""  as character
+
+	aArea       	  := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery		      := GetQryContabil(dDataCusto,cCentroCusto,cCentroCusteio,cItemContabil,cTipoProduto,cGrpContaContabil,cCodigoFilial)
+	cAlias            := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		DbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While (cAlias)->(!EOF())
+
+				nValorCusto  := ((cAlias)->VALCCD - (cAlias)->VALCCC)
+
+				(cAlias)->(dbSkip())
+			Enddo
+
+			(cAlias)->(DbCloseArea())
+		EndIf
+	EndIf
+
+	RestArea(aArea)
+
+Return nValorCusto
+
+/*
+    retorna os produtos que foram cadastrados como mão de obra
+*/
+Static Function GetQryProdutos(cPesqCodigoProduto)
+	Local cQuery       := "" as character
+
+	cQuery := "SELECT  " + CRLF
+	cQuery += "      D3_FILIAL  AS D3_FILIAL,  " + CRLF
+	cQuery += "      B1_COD     AS B1_COD,     " + CRLF
+	cQuery += "      B1_TIPO    AS B1_TIPO,    " + CRLF  
+	cQuery += "      B1_CCCUSTO AS B1_CCCUSTO, " + CRLF
+	cQuery += "      B1_ITEMCC  AS B1_ITEMCC,  " + CRLF
+	cQuery += "      B1_CLVL    AS B1_CLVL,    " + CRLF
+	cQuery += "      B1_UM      AS B1_UM,      " + CRLF
+	cQuery += "      B1_LOCPAD  AS B1_LOCPAD,  " + CRLF
+	cQuery += "      BZ_LOCPAD  AS BZ_LOCPAD,  " + CRLF
+	cQuery += "      B1_CC      AS B1_CC,      " + CRLF
+	cQuery += "      B1_CONTA   AS B1_CONTA,   " + CRLF
+	cQuery += "      B1_XTPCTBA AS B1_XTPCTBA, " + CRLF
+	cQuery += "      G1_QUANT   AS G1_QUANT,   " + CRLF
+	cQuery += "      G1_XPERC   AS G1_XPERC,   " + CRLF
+	cQuery += "      G1_FILDEST AS G1_FILDEST, " + CRLF
+	cQuery += "      G1_COMP    AS G1_COMP,    " + CRLF
+	cQuery += "      G1_COD     AS G1_COD      " + CRLF
+	cQuery += "FROM  " + RetSqlTab("SD3") + " (NOLOCK)      " + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              "+ RetSQLTab("SB1")         + CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND D3_COD = B1_COD       " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("SB1")    + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              "+ RetSQLTab("SBZ") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND D3_FILIAL = BZ_FILIAL " + CRLF
+	cQuery += " 				  AND D3_COD    = BZ_COD    " + CRLF
+	cQuery += "     			  AND " + RetSqlDel("SBZ")    + CRLF
+	cQuery += "		   INNER JOIN " + RetSqlTab("SG1") + " ON 1=1          " + CRLF
+	cQuery += "		 			  AND D3_FILIAL = G1_FILIAL                 " + CRLF  
+	cQuery += "		 			  AND D3_COD    = G1_COMP                   " + CRLF  
+	cQuery += "   	 		  	  AND " + RetSqlDel("SG1")		             + CRLF
+	cQuery += "WHERE 1=1  " + CRLF
+	cQuery += "      AND "+RetSqlFil("SD3")+" " + CRLF
+	cQuery += "      AND D3_ESTORNO = ' ' " + CRLF
+	cQuery += "      AND B1_COD     = " + ValToSql(cPesqCodigoProduto) +" " + CRLF
+	cQuery += "		 AND B1_TIPO IN " + FormatIn(cProdutoCxaDpr, "/")  + " " + CRLF
+	cQuery += "      AND SUBSTRING(D3_OP,7,2) <> " + ValToSql(OP_MANUTENCAO) + " " + CRLF
+	cQuery += "      AND D3_EMISSAO BETWEEN " + ValToSql(DtoS(dInicio)) + " AND " + ValToSql(DtoS(DDATABASE)) + " " + CRLF
+	cQuery += "      AND B1_CCCUSTO <> ' ' " + CRLF
+	cQuery += "      AND D3_OP <> ' ' " + CRLF
+	cQuery += "   	 AND " + RetSqlDel("SB1")            + CRLF
+	cQuery += " ORDER BY B1_COD, B1_CCCUSTO, B1_ITEMCC " + CRLF
+
+	u_ChangeQuery("\sql\CalculoCustoMaoDeObra_GetQryProdutos.sql",@cQuery)
+
+Return cQuery
+
+/*
+    Query para tratamnento mvimentos produção e estoque - SD3
+*/
+Static Function GetQryMovimento(dDataCusto,cCentroCusto,cCentroCusteio,cItemContabil,cPesqCodigoProduto,cTipoProduto,cLocalPad)
+	Local cQuery            := ""  as character
+
+	cQuery := " SELECT " + CRLF
+	cQuery += "       ISNULL(SUM(D3_QUANT),0) AS QTDE   " + CRLF
+	cQuery += " FROM " + RetSqlTab("SD3") + " (NOLOCK)  " + CRLF
+	cQuery += " 	   INNER JOIN " + CRLF
+	cQuery += " 	              "+ RetSQLTab("SB1") +  CRLF
+	cQuery += " 	              ON 1=1 " + CRLF
+	cQuery += " 				  AND B1_COD  = D3_COD  "+ CRLF
+	cQuery += "     			  AND " + RetSqlDel("SB1") + CRLF
+	cQuery += " WHERE 1=1  " + CRLF
+	cQuery += "       AND "+RetSqlFil("SD3")+" " + CRLF
+	cQuery += "       AND D3_ESTORNO = ' ' " + CRLF
+	cQuery += "       AND D3_EMISSAO BETWEEN " + ValToSql(DtoS(dDataCusto)) + " AND " + ValToSql(DtoS(DDATABASE)) + " " + CRLF
+	cQuery += "       AND B1_COD   = " + ValToSql(cPesqCodigoProduto) +" " + CRLF
+	cQuery += "		  AND B1_TIPO IN " + FormatIn(cProdutoCxaDpr, "/")  + " " + CRLF
+	cQuery += "       AND SUBSTRING(D3_OP,7,2) <> " + ValToSql(OP_MANUTENCAO) + " " + CRLF
+	cQuery += "       AND D3_OP <> ' ' " + CRLF
+	cQuery += "       AND B1_CCCUSTO = " + ValToSql(cCentroCusteio)  +"  " + CRLF
+	cQuery += "       AND B1_ITEMCC  = " + ValToSql(cItemContabil) +"  " + CRLF
+	cQuery += "       AND " + RetSqlDel("SD3") + CRLF
+
+	u_ChangeQuery("\sql\CalculoCustoMaoDeObra_GetQryMovimento.sql",@cQuery)
+
+Return cQuery
+
+/*
+    Query para tratamnento mvimentos contabveis - CT2
+*/
+Static Function GetQryContabil(dDataCusto,cCentroCusto,cCentroCusteio,cItemContabil,cTipoProduto,cGrpContaContabil,cCodigoFilial)
+	Local cQuery           := "" as character
+	Local cTipoConta       := "" as character
+	Local lCalculoFilial   := .F. as Logical
+
+	lCalculoFilial         := GetNewPar("OZ_CALCFIL",.T.)
+	
+	If ( cTipoProduto $ CONTA_CAIXA )
+		cTipoConta := GRUPO_CONTA_CAIXA
+	EndIf 
+
+	If ( cTipoProduto $ CONTA_DEPRECIACAO )
+		cTipoConta := GRUPO_CONTA_DEPRECIACAO
+	EndIf 
+
+	If (Empty(cTipoConta))
+		cTipoConta := cGrpContaContabil
+	EndIf 
+
+	cQuery := " SELECT ISNULL(SUM(CT2_VALOR),0)  AS VALCCC, " + CRLF
+	cQuery += " (SELECT ISNULL(SUM(CT2_VALOR),0) AS VALCCD  " + CRLF
+	cQuery += "FROM " + RetSqlTab("CT2") + CRLF
+	cQuery += "WHERE 1=1 " + CRLF
+	If ( lCalculoFilial )
+		cQuery += "      AND CT2_FILIAL = " + ValToSql(cCodigoFilial)  +"  " + CRLF
+	EndIf 
+	cQuery += "      AND CT2_MOEDLC = " + ValToSql(MOEDA_01) +" " + CRLF
+	cQuery += "      AND SUBSTRING(CT2_DEBITO,1,1) IN " + FormatIn(cTipoConta, "/") + " " + CRLF 
+	cQuery += "      AND CT2_DATA BETWEEN " + ValToSql(DtoS(dDataCusto)) + " AND " + ValToSql(DtoS(DDATABASE)) + " " + CRLF
+	cQuery += "      AND CT2_CCD    = " + ValToSql(cCentroCusteio)  +"   " + CRLF
+	cQuery += "      AND CT2_ITEMD  = " + ValToSql(cItemContabil) +"   " + CRLF
+	cQuery += "      AND " + RetSqlDel("CT2") + ") AS VALCCD " + CRLF
+	cQuery += "FROM " + RetSqlTab("CT2") + CRLF
+	cQuery += "WHERE 1=1 " + CRLF
+	If ( lCalculoFilial )
+		cQuery += "      AND CT2_FILIAL = " + ValToSql(cCodigoFilial)  +"  " + CRLF
+	EndIf 
+	cQuery += "      AND CT2_MOEDLC = " + ValToSql(MOEDA_01) +" " + CRLF
+	cQuery += "      AND SUBSTRING(CT2_CREDIT,1,1) IN " + FormatIn(cTipoConta, "/") + " " + CRLF 
+	cQuery += "      AND CT2_DATA BETWEEN " + ValToSql(DtoS(dInicio)) + " AND " + ValToSql(DtoS(DDATABASE)) + " " + CRLF
+	cQuery += "      AND CT2_CCC    = " + ValToSql(cCentroCusteio)  +"  " + CRLF
+	cQuery += "      AND CT2_ITEMC  = " + ValToSql(cItemContabil) +"  " + CRLF
+	cQuery += "      AND " + RetSqlDel("CT2") + CRLF
+
+	u_ChangeQuery("\sql\CalculoCustoMaoDeObra_GetQryContabil.sql",@cQuery)
+
+Return cQuery
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,cSintaxeRotina)
+
+Return
+
+

@@ -1,0 +1,266 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+
+namespace estoque.Producao.Custeio
+
+/*/{Protheus.doc} SaldoFinalCustoEmPartes
+
+	Tratamento do Custo em partes dentro do Sistema
+
+@type function
+@author Fabio Santos - CRM Service
+@since 12/08/2024
+@version P12
+@database SQL SERVER 
+
+@see MA280FIM
+@see OZGENSQL
+@see OZGEN18
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function SaldoFinalCustoEmPartes()
+	Local aArea             := {} as array
+	Local cDataFechamento   := ""  as character
+
+	Private cSintaxeRotina  := ""  as character
+	
+	aArea  		            := GetArea()
+	cSintaxeRotina          := ProcName(0)
+	cDataFechamento         := GetNewPar("MV_ULMES","20230930")
+		
+	FWMsgRun(,{|| GetSaldoFinalCustoPartes(cDataFechamento) } ,"Analisando Saldo Inicial Custo Em Partes...","Aguarde")
+
+	RestArea(aArea)
+
+Return
+
+/*
+ 	Retorna valores produto 
+*/
+Static Function GetSaldoFinalCustoPartes(dData)
+	Local aArea             := {}  as array
+	Local aRetorno          := {}  as array 
+	Local cAlias	        := ""  as character
+	Local cQuery	        := ""  as character
+	Local cPegaFilial       := ""  as character
+	Local cProduto     		:= ""  as character
+	Local cSequencia   		:= ""  as character
+	Local cArmazen     		:= ""  as character
+	Local cCf               := ""  as character  
+	Local nProcess   		:= 0   as integer
+	Local n01Quantidade		:= 0   as integer
+	Local n01M1VlCusto1 	:= 0   as integer
+	Local n01M2VlCusto2 	:= 0   as integer
+	Local n01M1CaixaCst 	:= 0   as integer
+	Local n01M2CaixaCst 	:= 0   as integer
+	Local n01M1DeprCst  	:= 0   as integer
+	Local n01M2DeprCst  	:= 0   as integer
+	Local n02Quantidade 	:= 0   as integer
+	Local n02M1VlCusto1  	:= 0   as integer
+	Local n02M2VlCusto2 	:= 0   as integer
+	Local n02M1CaixaCst  	:= 0   as integer
+	Local n02M2CaixaCst  	:= 0   as integer
+	Local n02M1DeprCst   	:= 0   as integer
+	Local n02M2DeprCst   	:= 0   as integer
+	Local nFinalQuant  		:= 0   as integer
+	Local nM1Custo1   		:= 0   as integer
+	Local nM2Custo2    		:= 0   as integer
+	Local nCxM1Custo   		:= 0   as integer
+	Local nCxM2Custo   		:= 0   as integer
+	Local nDpM1Custo   		:= 0   as integer
+	Local nDpM2Custo   		:= 0   as integer
+
+	aArea      	            := GetArea()
+
+	aAdd(aRetorno,{ "02","131440","10"})
+	aAdd(aRetorno,{ "02","131546","10"})
+	aAdd(aRetorno,{ "02","131436","10"})
+	aAdd(aRetorno,{ "02","131438","10"})
+	aAdd(aRetorno,{ "02","131438","20"})
+
+	If Len(aRetorno) > 0
+
+		If ( !Empty(cAlias) )
+			dbSelectArea(cAlias)
+			(cAlias)->(dbCloseArea())
+		EndIf
+
+		DbSelectArea("SB9")
+		SB9->(dbSetOrder(1))
+
+		For nProcess := 1 To Len(aRetorno)
+
+			n01Quantidade  := 0
+			n01M1VlCusto1  := 0
+			n01M2VlCusto2  := 0
+			n01M1CaixaCst  := 0
+			n01M2CaixaCst  := 0
+			n01M1DeprCst   := 0
+			n01M2DeprCst   := 0
+			n02Quantidade  := 0
+			n02M1VlCusto1  := 0
+			n02M2VlCusto2  := 0
+			n02M1CaixaCst  := 0
+			n02M2CaixaCst  := 0
+			n02M1DeprCst   := 0
+			n02M2DeprCst   := 0
+			nFinalQuant    := 0
+			nM1Custo1      := 0
+			nM2Custo2      := 0
+			nCxM1Custo     := 0
+			nCxM2Custo     := 0
+			nDpM1Custo     := 0
+			nDpM2Custo     := 0
+			cQuery         := ""
+			cAlias         := ""
+			cQuery         := QryListaCustoParte( aRetorno[nProcess][01],; 
+			                                      aRetorno[nProcess][02],; 
+												  aRetorno[nProcess][03])
+			cAlias         := MpSysOpenQuery(cQuery)
+
+			If ( !Empty(cAlias) )
+
+				DbSelectArea(cAlias)
+
+				If ( (cAlias)->(!EOF()) )
+
+					While (cAlias)->(!EOF())
+
+						If ( Alltrim((cAlias)->PZK_FILIAL) == Alltrim(aRetorno[nProcess][01]) .And.;
+							 Alltrim((cAlias)->PZK_COD)    == Alltrim(aRetorno[nProcess][02]) .And.; 
+							 Alltrim((cAlias)->PZK_LOCAL)  == Alltrim(aRetorno[nProcess][03]) )   
+						
+							If ( Alltrim((cAlias)->PZK_CF) $ Alltrim("I10/I20/PRD/DE4") )
+								cPegaFilial    := (cAlias)->PZK_FILIAL
+								cProduto       := (cAlias)->PZK_COD
+								cSequencia     := (cAlias)->PZK_SEQ
+								cArmazen       := (cAlias)->PZK_LOCAL
+								cCf            := (cAlias)->PZK_LOCAL
+								n01Quantidade  += (cAlias)->PZK_QATU
+								n01M1VlCusto1  += (cAlias)->PZK_VATU1
+								n01M2VlCusto2  += (cAlias)->PZK_VATU2
+								n01M1CaixaCst  += (cAlias)->PZK_CP0001
+								n01M2CaixaCst  += (cAlias)->PZK_CP0002
+								n01M1DeprCst   += (cAlias)->PZK_CP0003
+								n01M2DeprCst   += (cAlias)->PZK_CP0004
+							EndIf 
+
+							If ( Alltrim((cAlias)->PZK_CF) $ Alltrim("RQP/RE4/VDA") )
+								n02Quantidade  += (cAlias)->PZK_QATU
+								n02M1VlCusto1  += (cAlias)->PZK_VATU1
+								n02M2VlCusto2  += (cAlias)->PZK_VATU2
+								n02M1CaixaCst  += (cAlias)->PZK_CP0001
+								n02M2CaixaCst  += (cAlias)->PZK_CP0002
+								n02M1DeprCst   += (cAlias)->PZK_CP0003
+								n02M2DeprCst   += (cAlias)->PZK_CP0004
+							EndIf
+						EndIf
+				
+						(cAlias)->(dbSkip())
+					Enddo
+
+					If Alltrim(aRetorno[nProcess][02]) == Alltrim(cProduto)
+						nFinalQuant  := ( n01Quantidade - n02Quantidade )
+						nM1Custo1    := ( n01M1VlCusto1 - n02M1VlCusto1 )
+						nM2Custo2    := ( n01M2VlCusto2 - n02M2VlCusto2 )
+						nCxM1Custo   := ( n01M1CaixaCst - n02M1CaixaCst )
+						nCxM2Custo   := ( n01M2CaixaCst - n02M2CaixaCst )
+						nDpM1Custo   := ( n01M1DeprCst  - n02M1DeprCst  )
+						nDpM2Custo   := ( n01M2DeprCst  - n02M2DeprCst  )
+
+						If ( SB9->(dbSeek(  PAD(aRetorno[nProcess][01] ,TAMSX3("B9_FILIAL")[1]) +;
+											PAD(aRetorno[nProcess][02] ,TAMSX3("B9_COD")   [1]) +; 
+											PAD(aRetorno[nProcess][03] ,TAMSX3("B9_LOCAL") [1]) +;
+											PAD(DtoS(dData)            ,TAMSX3("B9_DATA")  [1]) )))
+							Begin Transaction
+								SB9->(RecLock("SB9",.F.))									
+									SB9->B9_CP0101     := nCxM1Custo
+									SB9->B9_CP0102     := nCxM2Custo
+									SB9->B9_CP0201     := nDpM1Custo
+									SB9->B9_CP0202     := nDpM2Custo
+									SB9->B9_CP0301     := 0
+									SB9->B9_CP0302     := 0
+									SB9->B9_CPM0101    := ( nCxM1Custo / nFinalQuant ) 
+									SB9->B9_CPM0102    := ( nCxM2Custo / nFinalQuant ) 
+									SB9->B9_CPM0201    := ( nDpM1Custo / nFinalQuant ) 
+									SB9->B9_CPM0202    := ( nDpM2Custo / nFinalQuant ) 
+									SB9->B9_CPM0301    := 0
+									SB9->B9_CPM0302    := 0
+								SB9->(MsUnlock())
+							End Transaction
+						EndIf
+					EndIf
+
+					If (Alltrim(aRetorno[nProcess][02]) == "131440")
+						If ( SB9->(dbSeek(  PAD("06"                   ,TAMSX3("B9_FILIAL")[1]) +;
+											PAD("131440"               ,TAMSX3("B9_COD")   [1]) +; 
+											PAD("10"                   ,TAMSX3("B9_LOCAL") [1]) +;
+											PAD(DtoS(dData)            ,TAMSX3("B9_DATA")  [1]) )))
+							Begin Transaction
+								SB9->(RecLock("SB9",.F.))									
+									SB9->B9_CP0101     := nCxM1Custo
+									SB9->B9_CP0102     := nCxM2Custo
+									SB9->B9_CP0201     := nDpM1Custo
+									SB9->B9_CP0202     := nDpM2Custo
+									SB9->B9_CP0301     := 0
+									SB9->B9_CP0302     := 0
+									SB9->B9_CPM0101    := ( nCxM1Custo / nFinalQuant ) 
+									SB9->B9_CPM0102    := ( nCxM2Custo / nFinalQuant ) 
+									SB9->B9_CPM0201    := ( nDpM1Custo / nFinalQuant ) 
+									SB9->B9_CPM0202    := ( nDpM2Custo / nFinalQuant ) 
+									SB9->B9_CPM0301    := 0
+									SB9->B9_CPM0302    := 0
+								SB9->(MsUnlock())
+							End Transaction
+						EndIf
+					EndIf
+					(cAlias)->(DbCloseArea())
+				EndIf
+			EndIf
+		Next nProcess
+	EndIf
+
+	RestArea(aArea)
+
+Return
+
+/*
+    Query para retornar o saldo inicial de cada produto 
+*/
+Static Function QryListaCustoParte(cCodFilial, cCodProduto, cLocPadrao )
+	Local cQuery         := ""  as character
+
+	cQuery := "SELECT 												 " + CRLF
+	cQuery += "        PZK_FILIAL AS PZK_FILIAL, 		             " + CRLF 
+	cQuery += "        PZK_COD    AS PZK_COD, 		                 " + CRLF    
+	cQuery += "        PZK_LOCAL  AS PZK_LOCAL, 		             " + CRLF  
+	cQuery += "        PZK_CF     AS PZK_CF,      		             " + CRLF
+	cQuery += "        PZK_DOC    AS PZK_DOC,     		             " + CRLF
+	cQuery += "        PZK_SEQ    AS PZK_SEQ,     		             " + CRLF
+	cQuery += "        PZK_QATU   AS PZK_QATU, 		                 " + CRLF   
+	cQuery += "        PZK_VATU1  AS PZK_VATU1, 		             " + CRLF  
+	cQuery += "        PZK_CM1    AS PZK_CM1, 		                 " + CRLF    
+	cQuery += "        PZK_VATU2  AS PZK_VATU2, 		             " + CRLF  
+	cQuery += "        PZK_CM2    AS PZK_CM2, 		                 " + CRLF    
+	cQuery += "        PZK_XDTFIN AS PZK_XDTFIN, 		             " + CRLF 
+	cQuery += "        PZK_XDTINI AS PZK_XDTINI, 		             " + CRLF 
+	cQuery += "        PZK_CP0001 AS PZK_CP0001, 		             " + CRLF 
+	cQuery += "        PZK_CP0002 AS PZK_CP0002, 		             " + CRLF 
+	cQuery += "        PZK_CP0003 AS PZK_CP0003, 		             " + CRLF 
+	cQuery += "        PZK_CP0004 AS PZK_CP0004, 		             " + CRLF 
+	cQuery += "        PZK_CP0005 AS PZK_CP0005, 		             " + CRLF 
+	cQuery += "        PZK_CP0006 AS PZK_CP0006 		             " + CRLF 
+	cQuery += "FROM    " + RetSqlTab("PZK") + " (NOLOCK)             " + CRLF
+	cQuery += "WHERE   1=1                                           " + CRLF
+	cQuery += "        AND PZK_FILIAL = " + ValToSql(cCodFilial) + " " + CRLF
+	cQuery += "        AND PZK_COD    = " + ValToSql(cCodProduto)+ " " + CRLF
+	cQuery += "        AND PZK_LOCAL  = " + ValToSql(cLocPadrao) + " " + CRLF
+	cQuery += "        AND " + RetSqlDel("PZK")               		   + CRLF
+	cQuery += "ORDER BY PZK_COD, PZK_LOCAL                           " + CRLF
+
+	u_ChangeQuery("\sql\AjustaCustoEmParteCaixaDepreciacao_Cst_440.sql",@cQuery)
+
+Return cQuery

@@ -1,0 +1,90 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+#include "ozminerals.ch"
+
+namespace estoque.Producao.Custeio
+
+/*/{Protheus.doc} ZeraSaldoCustoEmPartes
+
+	Rotina que é chamada pelo Ponto de entrada MA330OK, 
+	Tratamento do Custo em partes dentro do Sistema
+
+    Localização : Function MATA330( ) - Localizado nas rotinas de processamento de 
+                  custo em partes.
+
+    Descrição    : O recálculo do custo médio possibilita dividir o custo de produtos 
+                   fabricados em mais de uma parte, facilitando a visualização da composição 
+                   de custos dos produtos acabados.
+
+	Tdn : https://tdn.totvs.com/pages/releaseview.action?pageId=6087631
+
+@type function
+@author Fabio Santos - CRM Service
+@since 10/11/2023
+@version P12
+@database SQL SERVER 
+
+@see MA330CP
+@see OZGENSQL
+@see OZGEN18
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function ZeraSaldoCustoEmPartes()
+	Local aArea             := {} as array
+
+	Private cSintaxeRotina  := ""  as character
+	Private	cPermiteFilial  := ""  as character
+	Private cLocalEstoque         := ""  as character
+
+	cPermiteFilial                := AllTrim(GetNewPar("OZ_LIBFIL","06/02"))
+	cLocalEstoque                 := AllTrim(GetNewPar("OZ_NNRPRD" ,"ZA/ZP/10/20"))
+	cSintaxeRotina                := ProcName(0)
+	aArea  		     		      := GetArea()
+	
+	GetQryDeletaTabelaSaldo()
+
+	RestArea(aArea)
+
+Return
+
+/*
+    Deleta tabela PAZ apos executar o recalculo do custo medio
+*/
+Static Function GetQryDeletaTabelaSaldo()
+	Local cQuery       := "" as character
+
+	Begin Transaction
+
+		cQuery := " UPDATE " + RetSqlTab("SB2") + CRLF
+		cQuery += " SET   B2_QATU  = 0, B2_VATU1 = 0, B2_VATU2 = 0, " + CRLF
+		cQuery += "       B2_VATU3 = 0, B2_VATU4 = 0, B2_VATU5 = 0, " + CRLF
+		cQuery += "       B2_CM1   = 0, B2_CM2   = 0, B2_CM3   = 0, " + CRLF
+		cQuery += "       B2_CM4   = 0, B2_CM5   = 0 " + CRLF
+		cQuery += " WHERE 1=1  " + CRLF
+		cQuery += "       AND B2_FILIAL IN " + FormatIn(cPermiteFilial, "/") + " " + CRLF
+		cQuery += "       AND B2_LOCAL  IN " + FormatIn(cLocalEstoque, "/") + " " + CRLF
+		cQuery += "       AND " + RetSqlDel("SB2") + CRLF
+
+		If ( TcSQLExec(cQuery) < 0 )
+			ShowLogInConsole(TcSQLError())
+		Else
+			TcSqlExec(cQuery)
+		EndIf
+
+	End Transaction	
+
+	u_ChangeQuery("\sql\ZeraSaldoCustoEmPartes_GetQryDeletaTabelaSaldo.sql",@cQuery)
+
+Return
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,cSintaxeRotina)
+
+Return

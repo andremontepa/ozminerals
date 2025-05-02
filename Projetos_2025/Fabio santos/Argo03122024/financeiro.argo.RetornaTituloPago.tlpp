@@ -1,0 +1,163 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+#include "ozminerals.ch"
+
+namespace financeiro.argo
+
+/*/{Protheus.doc} RetornaTituloPago
+
+    Retorna para o o argo o pagamento do titulo financeiro - OZminerals 
+
+@type function
+@autor  Fabio Santos
+@since 18/08/2024
+@version P12
+@database SQL SERVER 
+	
+@See FA080TIT()
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function RetornaTituloPago(cCodFilial, cID, cParcela )
+	Local oRest     		:= nil as object
+	Local oJson     		:= nil as object
+	Local lRet      		:= .T. as logical 
+	Local aHeader   		:= {}  as array
+	Local cTkArgo   		:= ""  as character
+	Local cLog      		:= ""  as character
+	Local cToken            := ""  as character
+	Local bObject   		:= {||}
+
+	Private cSintaxeRotina  := ""  as character
+	Private cEnderecoApi    := ""  as character
+	Private cUserName       := ""  as character
+	Private cKeyPassword    := ""  as character
+	Private cReseller       := ""  as character
+	Private cCorp           := ""  as character
+	Private cGranttype      := ""  as character 
+	Private cUsrEviroment   := ""  as character 
+	Private cKeyEnviroment  := ""  as character 
+
+	cUsrEviroment   		:= GetNewPar("OZ_USRPROT","LEONARDO.MEDEIROS")  
+	cKeyEnviroment  		:= GetNewPar("OZ_KEYPROT","Totvs@2024")    
+	cEnderecoApi            := Alltrim(GetNewPar("OZ_APIARGO" ,"https://api.useargo.com"))
+	cUserName       		:= GetNewPar("OZ_USRNAME" ,"integracao.api")
+	cKeyPassword       		:= GetNewPar("OZ_KEYPWD"  ,"Oz@2023")
+	cReseller       		:= GetNewPar("OZ_RESELLE" ,"ozminerals")
+	cCorp           		:= GetNewPar("OZ_CORP"    ,"")
+	cGranttype       		:= GetNewPar("OZ_GRANTTY" ,"password")
+	cTkArgo                 := GetNewPar("OZ_TOKENFX","Basic YTUyZWY0NTAtM2QwNC00MWVlLTkxNWMtMWI1YzE2MDNhZDcyOjMzZTZmODRiLWM3ZmUtNDE1Mi05NmNmLWMwYWIyNjM5ZjhkZQ==")
+	lExibeToken             := GetNewPar("OZ_VETOKEN",.T.) 
+	bObject                 := {|| JsonObject():New()}
+	oRest                   := FwRest():New(cEnderecoApi)
+	oJson                   := Eval(bObject)
+	cSintaxeRotina          := ProcName(0)
+
+	oRest:SetPath("/oauth/access-token/")
+
+	aAdd(aHeader,"Content-Type: application/json")
+	aAdd(aHeader,"Authorization: " +cTkArgo)
+
+	oJson["username"]       := AllTrim(cUserName)
+	oJson["password"]       := AllTrim(cKeyPassword)
+	oJson["reseller"]       := AllTrim(cReseller)
+	oJson["corp"]           := AllTrim(cCorp)
+	oJson["grant_type"]     := AllTrim(cGranttype)
+
+	oRest:SetPostParams(oJson:ToJson())
+
+    // REALIZA O MÉTODO POST E VALIDA O RETORNO
+	If (oRest:Post(aHeader))
+		cToken := oRest:getResult()
+		lRet   := XBXATIT(cToken, cCodFilial, cID, cParcela) // CHAMA O METODO ATUALIZA REEMBOLSO
+	Else
+		cLog := "POST: " + oRest:GetLastError()
+		ShowLogInConsole(cLog)
+	EndIf
+
+Return( lRet )
+
+/*
+    Executa a baixa do Titulo processo ARGO
+*/
+Static Function XBXATIT(cToken, cCodFilial, cID, cParcela)
+	Local oRest     		:= nil as object 
+	Local aHeader   		:= {}  as array 
+	Local lRet      		:= .T. as logical 
+	Local nStatus   		:= 0   as integer 
+	Local nRetStatus        := 0   as integer  
+	Local cError    		:= ""  as character
+	Local c_ID      		:= ""  as character
+	Local cParc     		:= ""  as character
+	Local cCliID    		:= ""  as character
+	Local cCodigoID         := ""  as character 
+	Local cData     		:= ""  as character
+   	Local cLog      		:= ""  as character
+
+	oRest                   := FwRest():New(cEnderecoApi)
+	c_ID            		:= AllTrim(cID)      
+	cParc           		:= AllTrim(cParcela) 
+	cCodigoID       		:= GetNewPar("OZ_CODID","a52ef450-3d04-41ee-915c-1b5c1603ad72")
+	cCliID          		:= Alltrim(cCodigoID)
+	cData           		:= IIF(LEN(AllTrim(str(Day(dDataBase))))<2,"0"+AllTrim(str(Day(dDataBase))),AllTrim(str(Day(dDataBase))))+"/"+IIF(LEN(AllTrim(str(Month(dDataBase))))<2,"0"+AllTrim(str(Month(dDataBase))),AllTrim(str(Month(dDataBase))))+"/"+AllTrim(str(Year(dDataBase)))
+
+	oRest:SetPath("/argo/v2/requests/concluderefund/"+c_ID)
+
+	cToken := SubStr(cToken,At(':"',cToken)+2,36)
+
+	aAdd(aHeader,"client_id: "+cCliID)
+	aAdd(aHeader,"access_token: "+cToken)
+
+    DbSelectArea("ZZ1")
+    ZZ1->(DbSetOrder(1))
+
+	IF oRest:Post(aHeader) .AND. !EMPTY(ALLTRIM(c_ID))
+		cError     := ""
+		nStatus    := HTTPGetStatus(@cError)
+		nRetStatus := nStatus
+
+		IF nStatus >= 200 .And. nStatus <= 299
+
+			If Empty(oRest:getResult())
+                cLog := "WS REEMBOLSO ARGO - ERRO: " + cValToChar(nRetStatus)
+                ShowLogInConsole(cLog)
+			Else
+				cRet := oRest:getResult()
+
+				If ( ZZ1->(dbSeek(  PAD(xFilial("ZZ1")  ,TAMSX3("ZZ1_FILIAL") [1]) +; 
+									PAD(c_ID            ,TAMSX3("ZZ1_IDREQ")  [1]) +;
+									PAD(cParc           ,TAMSX3("ZZ1_PARCE")  [1]) +;
+									PAD("Integrado"     ,TAMSX3("ZZ1_STATUS") [1]) )))
+
+					If RecLock("ZZ1",.F.)
+						ZZ1->ZZ1_DTBX    := cData
+						ZZ1->ZZ1_HRBX    := Time()
+						ZZ1->ZZ1_STATUS  := "Pago"
+						ZZ1->ZZ1_STS     := "3"
+						ZZ1->(MsUnlock())
+					Endif
+				Endif
+
+               ShowLogInConsole(cRet)
+			Endif
+		Else
+            ShowLogInConsole(cError)
+		Endif
+	ELSE
+        cLog := oRest:getLastError() + CRLF + oRest:getResult()
+        ShowLogInConsole(cLog)
+	ENDIF
+
+Return( lRet )
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,cSintaxeRotina)
+
+Return
+

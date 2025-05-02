@@ -1,0 +1,371 @@
+#include "totvs.ch"
+#include "Protheus.Ch"
+#include "TbiConn.Ch"
+#include "totvs.ch"
+
+#define GRP_GROUP_NAME              "OZMinerals" 
+
+namespace estoque.Producao.Custeio
+
+/*/{Protheus.doc} GravaLoteContabilDoCusteio
+
+	Rotina que é chamada pelo Ponto de entrada MA330OK. 
+	Realiza o back-up do lote 008840 antes de executar o recalculo do custo medio.
+	Os dados serão gravados na tabela PAV. 
+    
+@type function
+@author Fabio Santos - CRM Service
+@since 30/10/2023
+@version P12
+@database SQL SERVER 
+
+@Obs 
+
+	Patametro OZ_LOTECTB 
+		Contem o numero do lote que será realizado o back-up
+		Deve ser preenchido o parametro seguido de barra ("/")
+		Exemplo de uso := 008840/008850
+
+    Tratamento das Queries: 
+
+		GetQryLoteContabil : Retorna dados da tabela CT2 do lote 008840 para gravar a tabela (PAV)
+
+@see MA330OK
+@see OZGENSQL
+@see OZGEN18
+
+@nested-tags:Frameworks/OZminerals
+/*/ 
+User Function GravaLoteContabilDoCusteio(cCodFilIni,cCodFilFim,dDtaIni,dDtaFim)
+	Local aArea             := {} as array
+	Local aCodigoLote       := {} as array
+	Local cAlias	        := ""  as character
+	Local cQuery	        := ""  as character
+
+	Private cSintaxeRotina  := ""  as character
+	Private cLoteContabil   := ""  as character
+	Private	cPermiteFilial  := ""  as character
+
+	cPermiteFilial          := AllTrim(GetNewPar("OZ_LIBFIL","06/02"))
+	cLoteContabil           := AllTrim(GetNewPar("OZ_LOTECTB" ,"008840"))
+	cSintaxeRotina          := ProcName(0)
+	aArea  		            := GetArea()
+
+	If ( !IsBlind() )
+
+		If ( !Empty(cAlias) )
+			dbSelectArea(cAlias)
+			(cAlias)->(dbCloseArea())
+		EndIf
+
+		cQuery               := GetQryLoteContabil(cCodFilIni,cCodFilFim,dDtaIni,dDtaFim)
+		cAlias               := MpSysOpenQuery(cQuery)
+
+		If ( !Empty(cAlias) )
+
+			DbSelectArea(cAlias)
+
+			If ( (cAlias)->(!EOF()) )
+
+				While (cAlias)->(!EOF())
+
+					If ( Alltrim( (cAlias)->CT2_LOTE) $ Alltrim(cLoteContabil))
+
+						aAdd(aCodigoLote,{AllTrim((cAlias)->CT2_LOTE)})
+						Exit 
+					EndIf
+
+					(cAlias)->(dbSkip())
+				Enddo
+
+				(cAlias)->(DbCloseArea())
+			EndIf
+		EndIf
+
+		If Len(aCodigoLote) > 0
+			GeraGravacaoLoteContabil(cCodFilIni,cCodFilFim,dDtaini,dDtaFim) 
+		EndIf 
+	EndIf 
+
+	RestArea(aArea)
+
+Return
+
+/*
+    Função que processa a gravação na tabela PAV - BACK-UP da CT2
+*/
+Static Function GeraGravacaoLoteContabil(cCodFilIni,cCodFilFim,dDtaIni,dDtaFim)
+	Local aArea                   := {}  as array
+	Local cAlias	     		  := ""  as character
+	Local cQuery	              := ""  as character
+	Local cMsg                    := ""  as character
+	Local lReckLock               := .F. as logical 
+	Local lPermiteExecutar        := .F. as logical 	 
+
+	aArea  		                  := GetArea()
+
+	If ( !Empty(cAlias) )
+		dbSelectArea(cAlias)
+		(cAlias)->(dbCloseArea())
+	EndIf
+
+	cQuery               := GetQryLoteContabil(cCodFilIni,cCodFilFim,dDtaIni,dDtaFim)
+	cAlias               := MpSysOpenQuery(cQuery)
+
+	If ( !Empty(cAlias) )
+
+		dbSelectArea(cAlias)
+
+		If ( (cAlias)->(!EOF()) )
+
+			While ((cAlias)->(!EOF()))
+
+					lReckLock        := .F.
+					lPermiteExecutar := .F.		
+
+					dbSelectArea("CT2")
+					CT2->(dbSetOrder(1))
+					If ( CT2->(dbSeek(  (cAlias)->CT2_FILIAL + (cAlias)->CT2_DATA   + ;
+										(cAlias)->CT2_LOTE   + (cAlias)->CT2_SBLOTE + ;
+										(cAlias)->CT2_DOC    + (cAlias)->CT2_LINHA  + ;
+										(cAlias)->CT2_TPSALD + (cAlias)->CT2_EMPORI + ;
+										(cAlias)->CT2_FILORI + (cAlias)->CT2_MOEDLC )))  
+
+						dbSelectArea("PAV")
+						PAV->(dbSetOrder(1))
+						If ( PAV->(dbSeek(  (cAlias)->CT2_FILIAL + (cAlias)->CT2_DATA   + ;
+											(cAlias)->CT2_LOTE   + (cAlias)->CT2_SBLOTE + ;
+											(cAlias)->CT2_DOC    + (cAlias)->CT2_LINHA  + ;
+											(cAlias)->CT2_TPSALD + (cAlias)->CT2_EMPORI + ;
+											(cAlias)->CT2_FILORI + (cAlias)->CT2_MOEDLC )))  
+							lReckLock        := .F.
+							lPermiteExecutar := .T.	
+						else
+							lReckLock        := .T.
+							lPermiteExecutar := .T.		
+						EndIf 
+
+						If ( lPermiteExecutar)
+
+							Begin Transaction
+								PAV->(RecLock("PAV",lReckLock))
+									PAV->PAV_FILIAL	:=	(cAlias)->CT2_FILIAL 
+									PAV->PAV_AGLUT 	:=	(cAlias)->CT2_AGLUT  
+									PAV->PAV_AT01CR	:=	(cAlias)->CT2_AT01CR 
+									PAV->PAV_AT01DB	:=	(cAlias)->CT2_AT01DB 
+									PAV->PAV_AT02CR	:=	(cAlias)->CT2_AT02CR 
+									PAV->PAV_AT02DB	:=	(cAlias)->CT2_AT02DB 
+									PAV->PAV_AT03CR	:=	(cAlias)->CT2_AT03CR 
+									PAV->PAV_AT03DB	:=	(cAlias)->CT2_AT03DB 
+									PAV->PAV_AT04CR	:=	(cAlias)->CT2_AT04CR 
+									PAV->PAV_AT04DB	:=	(cAlias)->CT2_AT04DB 
+									PAV->PAV_ATIVCR	:=	(cAlias)->CT2_ATIVCR 
+									PAV->PAV_ATIVDE	:=	(cAlias)->CT2_ATIVDE 
+									PAV->PAV_CCC   	:=	(cAlias)->CT2_CCC    
+									PAV->PAV_CCD   	:=	(cAlias)->CT2_CCD    
+									PAV->PAV_CLVLCR	:=	(cAlias)->CT2_CLVLCR 
+									PAV->PAV_CLVLDB	:=	(cAlias)->CT2_CLVLDB 
+									PAV->PAV_CODCLI	:=	(cAlias)->CT2_CODCLI 
+									PAV->PAV_CODFOR	:=	(cAlias)->CT2_CODFOR 
+									PAV->PAV_CODPAR	:=	(cAlias)->CT2_CODPAR 
+									PAV->PAV_CONFST	:=	(cAlias)->CT2_CONFST 
+									PAV->PAV_CRCONV	:=	(cAlias)->CT2_CRCONV 
+									PAV->PAV_CREDIT	:=	(cAlias)->CT2_CREDIT 
+									PAV->PAV_CRITER	:=	(cAlias)->CT2_CRITER 
+									PAV->PAV_CTLSLD	:=	(cAlias)->CT2_CTLSLD 
+									PAV->PAV_CTRLSD	:=	(cAlias)->CT2_CTRLSD 
+									PAV->PAV_DATA  	:=	StOD((cAlias)->CT2_DATA)   
+									PAV->PAV_DATATX	:=	StOD((cAlias)->CT2_DATATX) 
+									PAV->PAV_DC    	:=	(cAlias)->CT2_DC     
+									PAV->PAV_DCC   	:=	(cAlias)->CT2_DCC    
+									PAV->PAV_DCD   	:=	(cAlias)->CT2_DCD    
+									PAV->PAV_DEBITO	:=	(cAlias)->CT2_DEBITO 
+									PAV->PAV_DIACTB	:=	(cAlias)->CT2_DIACTB 
+									PAV->PAV_DOC   	:=	(cAlias)->CT2_DOC    
+									PAV->PAV_DTCONF	:=	StOD((cAlias)->CT2_DTCONF) 
+									PAV->PAV_DTCV3 	:=	StOD((cAlias)->CT2_DTCV3)  
+									PAV->PAV_DTLP  	:=	StOD((cAlias)->CT2_DTLP)   
+									PAV->PAV_DTVENC	:=	StOD((cAlias)->CT2_DTVENC) 
+									PAV->PAV_EMPORI	:=	(cAlias)->CT2_EMPORI 
+									PAV->PAV_ESTCAN	:=	(cAlias)->CT2_ESTCAN 
+									PAV->PAV_FILORI	:=	(cAlias)->CT2_FILORI 
+									PAV->PAV_GRPDIA	:=	(cAlias)->CT2_GRPDIA 
+									PAV->PAV_HIST  	:=	(cAlias)->CT2_HIST   
+									PAV->PAV_HP    	:=	(cAlias)->CT2_HP     
+									PAV->PAV_LOTE  	:=	(cAlias)->CT2_LOTE   
+									PAV->PAV_SBLOTE	:=	(cAlias)->CT2_SBLOTE 
+									PAV->PAV_LINHA 	:=	(cAlias)->CT2_LINHA  
+									PAV->PAV_MOEDLC	:=	(cAlias)->CT2_MOEDLC 
+									PAV->PAV_VALOR 	:=	(cAlias)->CT2_VALOR  
+									PAV->PAV_MOEDAS	:=	(cAlias)->CT2_MOEDAS 
+									PAV->PAV_ITEMD 	:=	(cAlias)->CT2_ITEMD  
+									PAV->PAV_ITEMC 	:=	(cAlias)->CT2_ITEMC  
+									PAV->PAV_INTERC	:=	(cAlias)->CT2_INTERC 
+									PAV->PAV_IDENTC	:=	(cAlias)->CT2_IDENTC 
+									PAV->PAV_TPSALD	:=	(cAlias)->CT2_TPSALD 
+									PAV->PAV_SEQUEN	:=	(cAlias)->CT2_SEQUEN 
+									PAV->PAV_MANUAL	:=	(cAlias)->CT2_MANUAL 
+									PAV->PAV_ORIGEM	:=	(cAlias)->CT2_ORIGEM 
+									PAV->PAV_ROTINA	:=	(cAlias)->CT2_ROTINA 
+									PAV->PAV_LP    	:=	(cAlias)->CT2_LP     
+									PAV->PAV_SEQHIS	:=	(cAlias)->CT2_SEQHIS 
+									PAV->PAV_SEQLAN	:=	(cAlias)->CT2_SEQLAN 
+									PAV->PAV_SLBASE	:=	(cAlias)->CT2_SLBASE 
+									PAV->PAV_TAXA  	:=	(cAlias)->CT2_TAXA   
+									PAV->PAV_VLR01 	:=	(cAlias)->CT2_VLR01  
+									PAV->PAV_VLR02 	:=	(cAlias)->CT2_VLR02  
+									PAV->PAV_VLR03 	:=	(cAlias)->CT2_VLR03  
+									PAV->PAV_VLR04 	:=	(cAlias)->CT2_VLR04  
+									PAV->PAV_VLR05 	:=	(cAlias)->CT2_VLR05  
+									PAV->PAV_KEY   	:=	(cAlias)->CT2_KEY    
+									PAV->PAV_SEGOFI	:=	(cAlias)->CT2_SEGOFI 
+									PAV->PAV_SEQIDX	:=	(cAlias)->CT2_SEQIDX 
+									PAV->PAV_OBSCNF	:=	(cAlias)->CT2_OBSCNF 
+									PAV->PAV_USRCNF	:=	(cAlias)->CT2_USRCNF 
+									PAV->PAV_HRCONF	:=	(cAlias)->CT2_HRCONF 
+									PAV->PAV_MLTSLD	:=	(cAlias)->CT2_MLTSLD 
+									PAV->PAV_NODIA 	:=	(cAlias)->CT2_NODIA  
+									PAV->PAV_MOEFDB	:=	(cAlias)->CT2_MOEFDB 
+									PAV->PAV_MOEFCR	:=	(cAlias)->CT2_MOEFCR 
+									PAV->PAV_LANCSU	:=	(cAlias)->CT2_LANCSU 
+									PAV->PAV_LANC  	:=	(cAlias)->CT2_LANC   
+									PAV->PAV_IDCONC	:=	(cAlias)->CT2_IDCONC 
+									PAV->PAV_INCONS	:=	(cAlias)->CT2_INCONS 
+									PAV->PAV_PROCES	:=	(cAlias)->CT2_PROCES 
+								PAV->(MsUnlock())
+
+								cMsg := "Gravando o Lote abaixo tabela PAV:"  + CRLF
+								cMsg += "Filial    :" + Alltrim((cAlias)->CT2_FILIAL) + CRLF
+								cMsg += "Lote      :" + Alltrim((cAlias)->CT2_LOTE)   + CRLF
+								cMsg += "SubLote   :" + Alltrim((cAlias)->CT2_SBLOTE) + CRLF
+								cMsg += "Linha     :" + Alltrim((cAlias)->CT2_LINHA)  + CRLF
+								cMsg += "Documento :" + Alltrim((cAlias)->CT2_DOC)    + CRLF
+								cMsg += "Data      :" + Alltrim((cAlias)->CT2_DATA)   + CRLF 
+								cMsg += "Meda      :" + Alltrim((cAlias)->CT2_MOEDLC) + CRLF 
+								ShowLogInConsole(cMsg)
+							End Transaction
+						EndIf 
+					EndIf
+
+				(cAlias)->(dbSkip())
+			EndDo
+
+			(cAlias)->(dbCloseArea())
+		EndIf
+	Else
+		ShowLogInConsole("Informações não Localizadas na base de Dados")
+	Endif
+
+	RestArea(aArea)
+
+Return
+
+/*
+    Query que retorna os dados referente a movimentação do lote 008840  
+*/
+Static Function GetQryLoteContabil(cCodFilIni,cCodFilFim,dDtaIni,dDtaFim)
+	Local cQuery           := "" as character
+
+	cQuery := "SELECT   " + CRLF
+	cQuery += "			CT2_AGLUT 	AS	CT2_AGLUT,  " + CRLF
+	cQuery += "			CT2_AT01CR	AS	CT2_AT01CR, " + CRLF
+	cQuery += "			CT2_AT01DB	AS	CT2_AT01DB, " + CRLF
+	cQuery += "			CT2_AT02CR	AS	CT2_AT02CR, " + CRLF
+	cQuery += "			CT2_AT02DB	AS	CT2_AT02DB, " + CRLF
+	cQuery += "			CT2_AT03CR	AS	CT2_AT03CR, " + CRLF
+	cQuery += "			CT2_AT03DB	AS	CT2_AT03DB, " + CRLF
+	cQuery += "			CT2_AT04CR	AS	CT2_AT04CR, " + CRLF
+	cQuery += "			CT2_AT04DB	AS	CT2_AT04DB, " + CRLF
+	cQuery += "			CT2_ATIVCR	AS	CT2_ATIVCR, " + CRLF
+	cQuery += "			CT2_ATIVDE	AS	CT2_ATIVDE, " + CRLF
+	cQuery += "			CT2_CCC   	AS	CT2_CCC,    " + CRLF
+	cQuery += "			CT2_CCD   	AS	CT2_CCD,    " + CRLF
+	cQuery += "			CT2_CLVLCR	AS	CT2_CLVLCR, " + CRLF
+	cQuery += "			CT2_CLVLDB	AS	CT2_CLVLDB, " + CRLF
+	cQuery += "			CT2_CODCLI	AS	CT2_CODCLI, " + CRLF
+	cQuery += "			CT2_CODFOR	AS	CT2_CODFOR, " + CRLF
+	cQuery += "			CT2_CODPAR	AS	CT2_CODPAR, " + CRLF
+	cQuery += "			CT2_CONFST	AS	CT2_CONFST, " + CRLF
+	cQuery += "			CT2_CRCONV	AS	CT2_CRCONV, " + CRLF
+	cQuery += "			CT2_CREDIT	AS	CT2_CREDIT, " + CRLF
+	cQuery += "			CT2_CRITER	AS	CT2_CRITER, " + CRLF
+	cQuery += "			CT2_CTLSLD	AS	CT2_CTLSLD, " + CRLF
+	cQuery += "			CT2_CTRLSD	AS	CT2_CTRLSD, " + CRLF
+	cQuery += "			CT2_DATA  	AS	CT2_DATA,   " + CRLF
+	cQuery += "			CT2_DATATX	AS	CT2_DATATX, " + CRLF
+	cQuery += "			CT2_DC    	AS	CT2_DC,     " + CRLF
+	cQuery += "			CT2_DCC   	AS	CT2_DCC,    " + CRLF
+	cQuery += "			CT2_DCD   	AS	CT2_DCD,    " + CRLF
+	cQuery += "			CT2_DEBITO	AS	CT2_DEBITO, " + CRLF
+	cQuery += "			CT2_DIACTB	AS	CT2_DIACTB, " + CRLF
+	cQuery += "			CT2_DOC   	AS	CT2_DOC,    " + CRLF
+	cQuery += "			CT2_DTCONF	AS	CT2_DTCONF, " + CRLF
+	cQuery += "			CT2_DTCV3 	AS	CT2_DTCV3,  " + CRLF
+	cQuery += "			CT2_DTLP  	AS	CT2_DTLP,   " + CRLF
+	cQuery += "			CT2_DTVENC	AS	CT2_DTVENC, " + CRLF
+	cQuery += "			CT2_EMPORI	AS	CT2_EMPORI, " + CRLF
+	cQuery += "			CT2_ESTCAN	AS	CT2_ESTCAN, " + CRLF
+	cQuery += "			CT2_FILIAL	AS	CT2_FILIAL, " + CRLF
+	cQuery += "			CT2_FILORI	AS	CT2_FILORI, " + CRLF
+	cQuery += "			CT2_GRPDIA	AS	CT2_GRPDIA, " + CRLF
+	cQuery += "			CT2_HIST  	AS	CT2_HIST,   " + CRLF
+	cQuery += "			CT2_HP    	AS	CT2_HP,     " + CRLF
+	cQuery += "			CT2_LOTE  	AS	CT2_LOTE,   " + CRLF
+	cQuery += "			CT2_SBLOTE	AS	CT2_SBLOTE, " + CRLF
+	cQuery += "			CT2_LINHA 	AS	CT2_LINHA,  " + CRLF
+	cQuery += "			CT2_MOEDLC	AS	CT2_MOEDLC, " + CRLF
+	cQuery += "			CT2_VALOR 	AS	CT2_VALOR,  " + CRLF
+	cQuery += "			CT2_MOEDAS	AS	CT2_MOEDAS, " + CRLF
+	cQuery += "			CT2_ITEMD 	AS	CT2_ITEMD,  " + CRLF
+	cQuery += "			CT2_ITEMC 	AS	CT2_ITEMC,  " + CRLF
+	cQuery += "			CT2_INTERC	AS	CT2_INTERC, " + CRLF
+	cQuery += "			CT2_IDENTC	AS	CT2_IDENTC, " + CRLF
+	cQuery += "			CT2_TPSALD	AS	CT2_TPSALD, " + CRLF
+	cQuery += "			CT2_SEQUEN	AS	CT2_SEQUEN, " + CRLF
+	cQuery += "			CT2_MANUAL	AS	CT2_MANUAL, " + CRLF
+	cQuery += "			CT2_ORIGEM	AS	CT2_ORIGEM, " + CRLF
+	cQuery += "			CT2_ROTINA	AS	CT2_ROTINA, " + CRLF
+	cQuery += "			CT2_LP    	AS	CT2_LP,     " + CRLF
+	cQuery += "			CT2_SEQHIS	AS	CT2_SEQHIS, " + CRLF
+	cQuery += "			CT2_SEQLAN	AS	CT2_SEQLAN, " + CRLF
+	cQuery += "			CT2_SLBASE	AS	CT2_SLBASE, " + CRLF
+	cQuery += "			CT2_TAXA  	AS	CT2_TAXA,   " + CRLF
+	cQuery += "			CT2_VLR01 	AS	CT2_VLR01,  " + CRLF
+	cQuery += "			CT2_VLR02 	AS	CT2_VLR02,  " + CRLF
+	cQuery += "			CT2_VLR03 	AS	CT2_VLR03,  " + CRLF
+	cQuery += "			CT2_VLR04 	AS	CT2_VLR04,  " + CRLF
+	cQuery += "			CT2_VLR05 	AS	CT2_VLR05,  " + CRLF
+	cQuery += "			CT2_KEY   	AS	CT2_KEY,    " + CRLF
+	cQuery += "			CT2_SEGOFI	AS	CT2_SEGOFI, " + CRLF
+	cQuery += "			CT2_SEQIDX	AS	CT2_SEQIDX, " + CRLF
+	cQuery += "			CT2_OBSCNF	AS	CT2_OBSCNF, " + CRLF
+	cQuery += "			CT2_USRCNF	AS	CT2_USRCNF, " + CRLF
+	cQuery += "			CT2_HRCONF	AS	CT2_HRCONF, " + CRLF
+	cQuery += "			CT2_MLTSLD	AS	CT2_MLTSLD, " + CRLF
+	cQuery += "			CT2_NODIA 	AS	CT2_NODIA,  " + CRLF
+	cQuery += "			CT2_MOEFDB	AS	CT2_MOEFDB, " + CRLF
+	cQuery += "			CT2_MOEFCR	AS	CT2_MOEFCR, " + CRLF
+	cQuery += "			CT2_LANCSU	AS	CT2_LANCSU, " + CRLF
+	cQuery += "			CT2_LANC  	AS	CT2_LANC,   " + CRLF
+	cQuery += "			CT2_IDCONC	AS	CT2_IDCONC, " + CRLF
+	cQuery += "			CT2_INCONS	AS	CT2_INCONS, " + CRLF
+	cQuery += "			CT2_PROCES	AS	CT2_PROCES  " + CRLF
+	cQuery += "FROM     " + RetSqlTab("CT2") + " (NOLOCK)  " + CRLF
+	cQuery += "			WHERE 1=1               " + CRLF
+	cQuery += "			AND CT2_FILIAL BETWEEN " + ValToSql(cCodFilIni) + " AND " + ValToSql(cCodFilFim) + "  " + CRLF
+	cQuery += "			AND CT2_DATA   BETWEEN " + ValToSql(Dtos(dDtaIni)) + " AND " + ValToSql(Dtos(dDtaFim)) + "  " + CRLF
+	cQuery += "			AND CT2_LOTE   IN " + FormatIn(cLoteContabil, "/")  + " " + CRLF
+	cQuery += "      	AND " + RetSqlDel("CT2") + CRLF
+
+	u_ChangeQuery("\sql\GravaLoteContabilDoCusteio_GetQryLoteContabil.sql",@cQuery)
+
+Return cQuery
+
+/*
+	Apresenta a Mensagem no Console do Protheus
+*/
+Static Function showLogInConsole(cMsg)
+
+	libOzminerals.u_showLogInConsole(cMsg,cSintaxeRotina)
+
+Return
