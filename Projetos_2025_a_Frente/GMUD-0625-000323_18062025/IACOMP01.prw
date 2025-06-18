@@ -1,0 +1,648 @@
+#include 'protheus.ch'
+#include 'parmtype.ch'
+#INCLUDE 'TOPCONN.CH'
+//-------------------------------------------------------------------------------
+/* {Protheus.doc} IACOMP01
+Programa - Geraçao automática de Pedido de Compras
+Copyright I AGE© - Inteligência Andrews
+@author Felipe Andrews de Almeida
+@since 01/2021
+@version Lobo Guara v.12.1.23
+*/
+//-------------------------------------------------------------------------------
+User function IACOMP01()
+	Local aGetAre := GetArea()
+	Local aCN9Are := CN9->(GetArea())
+	Local aCNDAre := CND->(GetArea())
+	Private lMigRat := .F.
+	Private _cCNE_XCC   := ""
+	Private _cCNE_XITCT := "" 
+	Private _cCNE_XCLVL := ""
+
+	dbSelectArea("CN9")
+	CN9->(dbSetOrder(01))
+	CN9->(dbSeek(CND->CND_FILIAL + CND->CND_CONTRA + CND->CND_REVISA))
+
+    // Julio Martins - CRMServices - Junho 2025
+    // Melhorias Solicitadas Sr KASSIO em reunião de 09/Jun/2025
+	
+	If CN9->CN9_XGLOBA == "N"  // Somente Contratos Nacionais
+		If 	Empty(CND->CND_XEMPRE) .Or. Empty(CND->CND_XFILIA)
+			MsgStop("Empresa/Filial não preenchidos. Verifique!")
+			Return
+		EndIf
+		nreg1 := CNE->(recno())
+		nreg2 := CXN->(recno())
+
+		CNE->(DbSetOrder(5))
+		CNE->(DbSeek(CND->(CND_FILIAL+CND_CONTRA+CND_REVISA+CND_NUMMED)))
+	
+		CXN->(DBsEToRDER(1))
+		CXN->(DbSeek(CND->(CND_FILIAL+CND_CONTRA+CND_REVISA+CND_NUMMED)+CNE->CNE_NUMERO))
+
+		CND->(RECLOCK("CND",.F.))
+		CND->CND_FORNEC := CXN->CXN_FORNEC
+		CND->CND_LJFORN := CXN->CXN_LJFORN
+		CND->CND_NUMERO := CXN->CXN_NUMPLA
+		CND->(MSUNLOCK())
+		CNE->(DbGoTo(nreg1))
+		CXN->(DbGoTo(nreg2))
+		RestArea(aGetAre)
+
+		CN120Ence("CND",CND->(Recno()),06)
+		
+
+	MsgRun("Aguarde...","Processando Rateio...",{|| fMigRat() })
+
+	//If lMigRat := .T.
+
+	MsgRun("Aguarde...","Processando Alçada...",{|| fMigAlc() })
+			
+	MsgRun("Aguarde...","Processando Pedido...",{|| fMigPed() })
+		
+		//Deleta alcada
+		dbSelectArea("SCR")
+		SCR->(dbSetOrder(01))
+		If SCR->(dbSeek(CND->CND_FILIAL + "PC" + CND->CND_PEDIDO))
+			Do While !SCR->(Eof()) .And. SCR->CR_FILIAL + SCR->CR_TIPO + Alltrim(SCR->CR_NUM) == CND->CND_FILIAL + "PC" + CND->CND_PEDIDO
+				
+				If SCR->(RecLock("SCR",.F.))
+					SCR->(dbDelete())
+					SCR->(MsUnlock())
+				EndIf
+				SCR->(dbSkip())
+			EndDo	
+		EndIf
+
+		dbSelectArea("CND")
+		If CND->(RecLock("CND",.F.))
+			CND->CND_PEDIDO := "N" + Right(Alltrim(CND->CND_PEDIDO),05) 
+			CND->(MsUnlock())
+		EndIf
+	//Endif	
+	Else
+	
+		MsgStop("Essa funcionalidade é exclusiva para pedidos configurados como tipo Global. Verifique!")
+	EndIf
+	
+	RestArea(aCNDAre)
+	RestArea(aCN9Are)
+	RestArea(aGetAre)
+	
+return
+
+
+
+Static Function fMigPed()
+	Local nXi := 0
+	Local nXj := 0
+	Local cQryIns := ""
+	Local cNumPed  := CND->CND_PEDIDO
+	Local _cEmpDes := CND->CND_XEMPRE
+	Local _cFilDes := CND->CND_XFILIA
+	Local aLisCmp := {"C7_FILIAL","C7_TIPO","C7_ITEM","C7_PRODUTO","C7_DESCRI","C7_UM","C7_QUANT",;
+					  "C7_PRECO","C7_TOTAL","C7_CC","C7_ITEMCTA","C7_CLVL","C7_APROV","C7_XTPAPL",;
+					  "C7_OBS","C7_DATPRF","C7_LOCAL","C7_COND","C7_FORNECE","C7_DINICOM","C7_DINITRA",;
+					  "C7_DINICQ","C7_CONTA","C7_EMISSAO","C7_NUM","C7_LOJA","C7_FILENT","C7_IPIBRUT",;
+					  "C7_FLUXO","C7_CONAPRO","C7_USER","C7_QTDSOL","C7_VALIPI","C7_VALICM","C7_PICM",;
+					  "C7_BASEICM","C7_BASEIPI","C7_TXMOEDA","C7_POLREPR","C7_FISCORI","C7_XOBS","C7_XOBSF","C7_XBLQSAL","C7_RATEIO"}
+	Local cGrpApr := ""
+					 
+	dbSelectArea("SC7")
+	SC7->(dbSetOrder(01))
+	If SC7->(dbSeek(CND->CND_FILIAL + CND->CND_PEDIDO))
+		
+		dbSelectArea("CNE")
+		CNE->(dbSetOrder(01))
+		CNE->(dbSeek(SC7->C7_FILIAL + SC7->C7_CONTRA + SC7->C7_CONTREV + SC7->C7_PLANILH + SC7->C7_MEDICAO + SC7->C7_ITEMED))
+		If !Empty(CNE->CNE_XCC)
+			_cCNE_XCC   := CNE->CNE_XCC
+			_cCNE_XITCT := CNE->CNE_XITCTA 
+			_cCNE_XCLVL := CNE->CNE_XCLVL
+		EndIf
+	
+		cGrpApr := fGetGAp(_cEmpDes)
+	
+		Do While !SC7->(Eof()) .And. SC7->C7_FILIAL + SC7->C7_NUM == CND->CND_FILIAL + CND->CND_PEDIDO
+			cQryIns := " INSERT INTO SC7" + _cEmpDes + "0 ( "
+			
+			For nXi := 01 to Len(aLisCmp)
+				cQryIns += aLisCmp[nXi] + ","
+			Next nXi
+			
+			cQryIns += "R_E_C_N_O_) VALUES ("
+			dbSelectArea("CNE")
+			CNE->(dbSetOrder(01))
+			CNE->(dbSeek(SC7->C7_FILIAL + SC7->C7_CONTRA + SC7->C7_CONTREV + SC7->C7_PLANILH + SC7->C7_MEDICAO + SC7->C7_ITEMED))
+			_cCNE_XCC   := CNE->CNE_XCC
+			_cCNE_XITCT := CNE->CNE_XITCTA 
+			_cCNE_XCLVL := CNE->CNE_XCLVL
+			
+			For nXj := 01 to Len(aLisCmp)
+				If aLisCmp[nXj] $ "C7_FILIAL|C7_FILENT|C7_FISCORI"
+					cQryIns +=  "'" + _cFilDes + "',"
+				ElseIf  aLisCmp[nXj] == "C7_NUM"
+					cQryIns +=  "'" + "N" + Right(&("SC7->"+aLisCmp[nXj]),05) + "',"
+					cNumped := "N" + Right(&("SC7->"+aLisCmp[nXj]),05) 
+				ElseIf  aLisCmp[nXj] == "C7_CC"
+					cQryIns +=  "'" + _cCNE_XCC + "',"
+				ElseIf  aLisCmp[nXj] == "C7_ITEMCTA"
+					cQryIns +=  "'" + _cCNE_XITCT + "',"
+				ElseIf  aLisCmp[nXj] == "C7_CLVL"
+					cQryIns +=  "'" + _cCNE_XCLVL + "',"
+				ElseIf  aLisCmp[nXj] $ "C7_XOBS|C7_XOBSF"
+					cQryIns +=  "'" + CND->CND_OBS + "',"
+				ElseIf  aLisCmp[nXj] == "C7_APROV"
+    				cQryIns +=  "'" + cGrpApr + "',"
+				Else
+					Do Case
+						Case ValType(&("SC7->"+aLisCmp[nXj])) == "N"
+							cQryIns +=  cValToChar(&("SC7->"+aLisCmp[nXj])) + ","
+						Case ValType(&("SC7->"+aLisCmp[nXj])) == "C"
+							cQryIns +=  "'" + &("SC7->"+aLisCmp[nXj]) + "',"
+						Case ValType(&("SC7->"+aLisCmp[nXj])) == "D"
+							cQryIns +=  "'" + DToS(&("SC7->"+aLisCmp[nXj])) + "',"
+					EndCase
+				EndIf
+			Next nXj
+		
+			cQryIns += "( SELECT MAX(R_E_C_N_O_)+1 FROM SC7" + _cEmpDes + "0 ))"
+			
+			If (TCSqlExec(cQryIns) < 0)
+			    Alert("TCSQLError() " + TCSQLError())
+			endif
+		           
+			cQryIns := ""
+			SC7->(dbSkip())
+		EndDo
+		
+		//Deleta pedido
+		dbSelectArea("SC7")
+		SC7->(dbSetOrder(01))
+		If SC7->(dbSeek(CND->CND_FILIAL + CND->CND_PEDIDO))
+			Do While !SC7->(Eof()) .And. SC7->C7_FILIAL + SC7->C7_NUM == CND->CND_FILIAL + CND->CND_PEDIDO
+			
+				If SC7->(RecLock("SC7",.F.))
+					SC7->(dbDelete())
+					SC7->(MsUnlock())
+				EndIf
+				SC7->(dbSkip())
+			EndDo
+		EndIf
+
+		//************************************************************ em 02/04/2021//
+		//Carregas os documentos da medição para pedido de compra
+		cItem := "0001"
+		cQuery := "	SELECT AC9_CODOBJ,ACB_OBJETO,ACB_DESCRI "
+		cQuery += "	FROM " + RetSqlName("AC9") + " AC9 " 
+		cQuery += "	INNER JOIN " + RetSqlName("ACB") + " ACB ON  ACB_CODOBJ = AC9_CODOBJ AND ACB.D_E_L_E_T_ != '*' "
+		cQuery += "	WHERE AC9_ENTIDA = 'CND' AND AC9_CODENT = '" + CND->CND_FILIAL + CND->CND_CONTRA + CND->CND_REVISA + CND->CND_NUMMED + "' AND AC9.D_E_L_E_T_ != '*' "
+		If SELECT("TRBAC9") > 0
+			TRBAC9->(DbCloseArea())
+		Endif
+	    dbUseArea(.T.,"TOPCONN", TcGenQry(,,cQuery),"TRBAC9",.T.,.T.)
+		DbSelectArea("TRBAC9")
+		TRBAC9->(dbGoTop())		    
+		Do While TRBAC9->(!Eof())
+			//conhecimento
+			cUpdate := "INSERT INTO AC9" + _cEmpDes + "0 (AC9_FILENT, AC9_ENTIDA ,AC9_CODENT, AC9_CODOBJ, R_E_C_N_O_) " 
+			cUpdate += "VALUES ('" + _cFilDes + "','SC7','" + _cFilDes + cNumped + cItem + "','" + TRBAC9->AC9_CODOBJ + "',(SELECT MAX(R_E_C_N_O_)+1 FROM AC9" + _cEmpDes + "0)) "
+			nFlag := TcSqlExec(cUpdate)  
+			//Verifica se o documento existe na empresa de destino	
+			cArqui := TRBAC9->ACB_OBJETO
+			If !FILE('\dirdoc\co' + _cEmpDes + '\shared\' + cArqui )
+				cCdEmpA := FWCodEmp()
+				//Copia o documento de uma empresa para outra.
+				__CopyFile( '\dirdoc\co' + cCdEmpA + '\shared\' + cArqui, '\dirdoc\co' + _cEmpDes + '\shared\' + cArqui )
+				//cADSTRO Do objeto
+				cUpdate := "INSERT INTO ACB" + _cEmpDes + "0 (ACB_CODOBJ, ACB_OBJETO,ACB_DESCRI,R_E_C_N_O_) " 
+				cUpdate += "VALUES ('" + TRBAC9->AC9_CODOBJ + "','" + TRBAC9->ACB_OBJETO + "','" + TRBAC9->ACB_DESCRI + "',(SELECT MAX(R_E_C_N_O_)+1 FROM ACB" + _cEmpDes + "0)) "
+				nFlag := TcSqlExec(cUpdate)
+			Endif					
+			dbSelectArea("TRBAC9")
+			TRBAC9->(dbSkip())
+		EndDo 				
+		
+		StartJob("U_IACOMP03",GetEnvServer(), .T.,cEmpAnt,_cEmpDes,_cFilDes + "N" + Right(Alltrim(CND->CND_PEDIDO),5))
+		
+	EndIf
+
+		cUpdate := " UPDATE SCH"+_cEmpDes+"0  SET D_E_L_E_T_ = ' ', R_E_C_D_E_L_ = 0 "
+		cUpdate += " WHERE D_E_L_E_T_ = '*' "
+		cUpdate += " AND CH_FILIAL = '"+_cFilDes+"' "
+		cUpdate += " AND CH_PEDIDO = 'N"+Right(Alltrim(CND->CND_PEDIDO),5)+"' "
+		TcSqlExec(cUpdate)
+					
+		cUpdate := " UPDATE A SET A.C7_RATEIO = '1' "
+		cUpdate += " FROM SC7"+_cEmpDes+"0 A "
+		cUpdate += " WHERE A.D_E_L_E_T_ = ' ' "
+		cUpdate += " AND A.C7_FILIAL = '"+_cFilDes+"' "
+		cUpdate += " AND A.C7_NUM = 'N"+Right(Alltrim(CND->CND_PEDIDO),5)+"' "
+		cUpdate += " AND A.C7_ITEM IN (SELECT DISTINCT X.CH_ITEMPD FROM SCH"+_cEmpDes+"0 X WHERE X.D_E_L_E_T_ = ' ' AND X.CH_FILIAL = A.C7_FILIAL AND X.CH_PEDIDO = A.C7_NUM) "
+		cUpdate += " AND A.C7_RATEIO = '2' "
+		cUpdate += " AND (SELECT COUNT(*) FROM SCH"+_cEmpDes+"0 B "
+		cUpdate += " 	WHERE B.D_E_L_E_T_ = ' ' "
+		cUpdate += " 	AND B.CH_FILIAL = A.C7_FILIAL "
+		cUpdate += " 	AND B.CH_PEDIDO = A.C7_NUM "
+		cUpdate += " 	AND B.CH_ITEMPD = A.C7_ITEM) > 0 "
+		TcSqlExec(cUpdate)
+				
+Return
+
+
+Static Function fMigAlc()
+	Local nXi := 0
+//	Local nXj := 0
+	Local cQryIns := ""
+//	Local cNumPed := CND->CND_PEDIDO
+	Local _cEmpDes := CND->CND_XEMPRE
+	Local _cFilDes := CND->CND_XFILIA
+	
+	Local aLisCmp := {"CR_FILIAL","CR_NUM","CR_TIPO","CR_USER","CR_APROV","CR_GRUPO","CR_ITGRP","CR_NIVEL",;
+					  "CR_STATUS","CR_EMISSAO","CR_TOTAL","CR_MOEDA","CR_TXMOEDA"}
+					 
+	dbSelectArea("SCR")
+	SCR->(dbSetOrder(01))
+	If SCR->(dbSeek(CND->CND_FILIAL + "PC" + CND->CND_PEDIDO))
+		Do While !SCR->(Eof()) .And. SCR->CR_FILIAL + SCR->CR_TIPO + Alltrim(SCR->CR_NUM) == CND->CND_FILIAL + "PC" + CND->CND_PEDIDO
+			//Alert("achou item SCR")
+			cQryIns := " INSERT INTO SCR" + _cEmpDes + "0 ( "
+			
+			For nXi := 01 to Len(aLisCmp)
+				cQryIns += aLisCmp[nXi] + ","
+			Next nXi
+			
+			cQryIns += "R_E_C_N_O_) VALUES ("
+		
+			For nXi := 01 to Len(aLisCmp)
+				If aLisCmp[nXi] $ "CR_FILIAL"
+					cQryIns +=  "'" + _cFilDes + "',"
+				ElseIf  aLisCmp[nXi] == "CR_NUM"
+					cQryIns +=  "'" + "N" + Right(Alltrim(&("SCR->"+aLisCmp[nXi])),05) + "',"
+				Else
+					Do Case
+						Case ValType(&("SCR->"+aLisCmp[nXi])) == "N"
+							cQryIns +=  cValToChar(&("SCR->"+aLisCmp[nXi])) + ","
+						Case ValType(&("SCR->"+aLisCmp[nXi])) == "C"
+							cQryIns +=  "'" + &("SCR->"+aLisCmp[nXi]) + "',"
+						Case ValType(&("SCR->"+aLisCmp[nXi])) == "D"
+							cQryIns +=  "'" + DToS(&("SCR->"+aLisCmp[nXi])) + "',"
+					EndCase
+				EndIf
+			Next nXi
+		
+			cQryIns += "( SELECT MAX(R_E_C_N_O_)+1 FROM SCR" + _cEmpDes + "0 ))"
+			TCSqlExec(cQryIns)
+			cQryIns := ""
+			SCR->(dbSkip())
+		EndDo
+		
+		//Deleta alcada
+		dbSelectArea("SCR")
+		SCR->(dbSetOrder(01))
+		If SCR->(dbSeek(CND->CND_FILIAL + "PC" + CND->CND_PEDIDO))
+			Do While !SCR->(Eof()) .And. SCR->CR_FILIAL + SCR->CR_TIPO + Alltrim(SCR->CR_NUM) == CND->CND_FILIAL + "PC" + CND->CND_PEDIDO
+				
+				If SCR->(RecLock("SCR",.F.))
+					SCR->(dbDelete())
+					SCR->(MsUnlock())
+				EndIf
+				SCR->(dbSkip())
+			EndDo
+		EndIf
+	EndIf
+
+Return
+
+//##################################################
+// Função para migração rateios contratos Nacionais 
+//##################################################
+Static Function fMigRat()
+	Local nXi := 0
+	Local nXp := 0
+//	Local cRa := 0  // Controle dos rateios CNZ e CNE
+	Local cDestar := ""
+	Local cQryIns := ""
+	Local cNumMed := ""
+	Local cNumPed := CND->CND_PEDIDO
+	Local _cEmpDes:= CND->CND_XEMPRE
+	Local _cFilDes:= CND->CND_XFILIA
+	Local aLisCmp := {"CH_FILIAL","CH_PEDIDO","CH_FORNECE","CH_LOJA","CH_ITEMPD","CH_ITEM","CH_PERC","CH_CC","CH_ITEMCTA","CH_CLVL","CH_CUSTO1","CH_PROJET","CH_TAREFA"}
+	Local aLisaj7 := {"AJ7_FILIAL","AJ7_PROJET","AJ7_TAREFA","AJ7_NUMPC","AJ7_ITEMPC","AJ7_COD","AJ7_QUANT","AJ7_DESCRI"}
+
+
+if len(alltrim(cNumPed))==6 
+
+	dbSelectArea("CNE")
+	CNE->(dbSetOrder(04))
+	If CNE->(dbSeek(CND->CND_FILIAL + CND->CND_NUMMED))	
+	cNumMed := CNE->CNE_NUMMED
+	cNumPed := CNE->CNE_PEDIDO
+	//If CNE->(dbSeek(CND->CND_FILIAL + CND->CND_CONTRA + CND->CND_REVISA + CND->CND_NUMERO + CND->CND_NUMMED))
+		Do While !CNE->(Eof()) .And. alltrim(CNE->CNE_NUMMED)==alltrim(cNumMed)
+			dbSelectArea("CNZ")
+			dbSetOrder(08)
+			dbGoTop()
+		    If CNZ->(dbSeek(CNE->CNE_FILIAL + CNE->CNE_CONTRA + CNE->CNE_NUMMED + CNE->CNE_ITEM ))
+		
+
+				lMigRat := .T.
+				Do While !CNZ->(Eof()) .And. alltrim(CNZ_NUMMED)==alltrim(cNumMed) .and. CNZ->CNZ_ITCONT= alltrim(CNE->CNE_ITEM)
+				//Do While !CNZ->(Eof()) .And. CNE->CNE_FILIAL + CNE->CNE_CONTRA + CNE->CNE_REVISA + CNE->CNE_NUMMED + CNE->CNE_ITEM 		   == CNZ->CNZ_FILIAL + CNZ->CNZ_CONTRA + CNZ->CNZ_REVISA + CNZ->CNZ_NUMMED + CNZ->CNZ_ITCONT
+					nXp := nXp + 1
+
+					cQryIns := " INSERT INTO SCH" + _cEmpDes + "0 ( "
+					
+					For nXi := 01 to Len(aLisCmp)
+						cQryIns += aLisCmp[nXi] + ","
+					Next nXi
+					
+					cQryIns += "R_E_C_N_O_) VALUES ("
+				
+					For nXi := 01 to Len(aLisCmp)
+						If Alltrim(aLisCmp[nXi]) == "CH_FILIAL"
+							cQryIns +=  "'" + _cFilDes + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_PEDIDO"
+							cQryIns +=  "'" + "N" + Right(Alltrim(cNumPed),05) + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_FORNECE"
+							cQryIns +=  "'" + CNZ->CNZ_FORNEC + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_LOJA"
+							cQryIns +=  "'" + CNZ->CNZ_LJFORN + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_ITEMPD"
+						//	cItePed := Posicione("SC7",4,xFilial("SC7") + CNE->CNE_PRODUT + CNE->CNE_PEDIDO+ "0"+alltrim(CNE->CNE_ITEM),"C7_ITEM")
+							cItePed := u_PegaItem()
+							cQryIns +=  "'" + cItePed + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_ITEM"
+							cQryIns +=  "'" + CNZ->CNZ_ITEM + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_PERC"
+							cQryIns += "'" +cValToChar(CNZ->CNZ_PERC) + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_CC"
+							cQryIns +=  "'" + CNZ->CNZ_CC + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_ITEMCTA"
+							cQryIns +=  "'" + CNZ->CNZ_ITEMCT + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_CLVL"
+							cQryIns +=  "'" + CNZ->CNZ_CLVL + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_CUSTO1"
+							cQryIns += "'" +cValToChar(CNZ->CNZ_VALOR1) + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_PROJET"
+							cQryIns += "'" + CNZ->CNZ_PROJET + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_TAREFA"
+							cQryIns += "'" + alltrim(CNZ->CNZ_TAREFA) + "',"
+						EndIf
+					Next nXi
+					cQryIns += "( SELECT MAX(R_E_C_N_O_)+1 FROM SCH" + _cEmpDes + "0 ))"
+
+					If (TCSqlExec(cQryIns) < 0)
+			    	Alert("TCSQLError() " + TCSQLError()) 
+					msgalert("Chamar Suporte !")
+					endif
+					//Grava AJ7 - Projetos x Tarefas Pedidos de Compras
+					//Julio Martins  -  Mar / 2025
+					cQryIns := ""
+					cDestar := u_PegaDes()
+
+					cQryIns := " INSERT INTO AJ7" + _cEmpDes + "0 ( "
+					
+					For nXi := 01 to Len(aLisAj7)
+						cQryIns += aLisAj7[nXi] + ","
+					Next nXi
+					
+					cQryIns += "R_E_C_N_O_) VALUES ("
+				    
+					if !Empty(CNZ->CNZ_PROJET)
+					For nXi := 01 to Len(aLisAj7)
+					
+						If Alltrim(aLisAj7[nXi]) == "AJ7_FILIAL"
+							cQryIns +=  "'" + _cFilDes + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_NUMPC"
+							cQryIns +=  "'" + "N" + Right(Alltrim(cNumPed),05) + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_PROJET"
+							cQryIns += "'" + CNZ->CNZ_PROJET + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_TAREFA"
+							cQryIns += "'" + alltrim(CNZ->CNZ_TAREFA) + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_DESCRI"
+							cQryIns +=  "'" + cDestar + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_ITEMPC"
+							//cItePed := Posicione("SC7",4,xFilial("SC7") + CNE->CNE_PRODUT + CNE->CNE_PEDIDO+"0"+alltrim(CNE->CNE_ITEM),"C7_ITEM")
+							cItePed := u_PegaItem()
+							
+							cQryIns +=  "'" + cItePed + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_COD"
+							cQryIns += "'" + alltrim(CNE->CNE_PRODUT) + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_QUANT"
+							cQryIns += "'" + cValToChar((CNZ->CNZ_PERC * CNE->CNE_QUANT)/100) + "',"
+												
+						EndIf
+					
+					Next nXi
+
+					cQryIns += "( SELECT MAX(R_E_C_N_O_)+1 FROM AJ7" + _cEmpDes + "0 ))"
+			
+					If (TCSqlExec(cQryIns) < 0)
+			    	Alert("TCSQLError() " + TCSQLError()) 
+					msgalert("Atenção !! Verifique os PROJETOS x TAREFAS Rateados!")
+					Endif
+					Endif
+					
+					cQryIns := ""
+					CNZ->(dbSkip())
+				EndDo
+			Else   // Transfere Rateios da CNE - Item da Medição
+				nXp := nXp + 1
+
+					cQryIns := " INSERT INTO SCH" + _cEmpDes + "0 ( "
+					
+					For nXi := 1 to Len(aLisCmp)
+						cQryIns += aLisCmp[nXi] + ","
+					Next nXi
+					
+					cQryIns += "R_E_C_N_O_) VALUES ("
+				
+					For nXi := 1 to Len(aLisCmp)
+						If Alltrim(aLisCmp[nXi]) == "CH_FILIAL"
+							cQryIns +=  "'" + _cFilDes + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_PEDIDO"
+							cQryIns +=  "'" + "N" + Right(Alltrim(cNumPed),05) + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_FORNECE"
+							cQryIns +=  "'" + CND->CND_FORNEC + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_LOJA"
+							cQryIns +=  "'" + CND->CND_LJFORN + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_ITEMPD"
+						//	cItePed := Posicione("SC7",4,xFilial("SC7") + CNE->CNE_PRODUT + CNE->CNE_PEDIDO+ "0"+alltrim(CNE->CNE_ITEM),"C7_ITEM")
+							cItePed := u_PegaItem()
+							cQryIns +=  "'" + cItePed + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_ITEM"
+							cQryIns +=  "'" +  substring(cItePed,3,2) + "',"   //          substring(CNE->CNE_ITEM,3,2) + "',"    //Item da medição
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_PERC"
+							cQryIns += "'" +cValToChar(100) + "',"   // % Rateio = 100 %
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_CC"
+							cQryIns +=  "'" + CNE->CNE_CC + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_ITEMCTA"
+							cQryIns +=  "'" + CNE->CNE_ITEMCT + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_CLVL"
+							cQryIns +=  "'" + CNE->CNE_CLVL + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_CUSTO1"
+							cQryIns += "'" +cValToChar(CNE->CNE_VLTOT) + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_PROJET"
+							cQryIns += "'" + CNE->CNE_PROJET + "',"
+						ElseIf Alltrim(aLisCmp[nXi]) == "CH_TAREFA"
+							cQryIns += "'" + alltrim(CNE->CNE_TAREFA) + "',"
+						EndIf
+					Next nXi
+					cQryIns += "( SELECT MAX(R_E_C_N_O_)+1 FROM SCH" + _cEmpDes + "0 ))"
+
+					If (TCSqlExec(cQryIns) < 0)
+			    	Alert("TCSQLError() " + TCSQLError()) 
+					msgalert("Chamar Suporte !")
+					endif
+
+					//Grava AJ7 - Projetos x Tarefas Pedidos de Compras
+					//Julio Martins  -  Mar / 2025
+					cQryIns := ""
+					cDestar := u_PegaDes1()
+
+					cQryIns := " INSERT INTO AJ7" + _cEmpDes + "0 ( "
+					
+					For nXi := 1 to Len(aLisAj7)
+						cQryIns += aLisAj7[nXi] + ","
+					Next nXi
+					
+					cQryIns += "R_E_C_N_O_) VALUES ("
+				    
+					if !Empty(CNE->CNE_PROJET)
+					For nXi := 1 to Len(aLisAj7)
+					
+						If Alltrim(aLisAj7[nXi]) == "AJ7_FILIAL"
+							cQryIns +=  "'" + _cFilDes + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_NUMPC"
+							cQryIns +=  "'" + "N" + Right(Alltrim(cNumPed),05) + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_PROJET"
+							cQryIns += "'" + CNE->CNE_PROJET + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_TAREFA"
+							cQryIns += "'" + alltrim(CNE->CNE_TAREFA) + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_DESCRI"
+							cQryIns +=  "'" + cDestar + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_ITEMPC"
+							//cItePed := Posicione("SC7",4,xFilial("SC7") + CNE->CNE_PRODUT + CNE->CNE_PEDIDO+"0"+alltrim(CNE->CNE_ITEM),"C7_ITEM")
+							cItePed := u_PegaItem()
+							
+							cQryIns +=  "'" + cItePed + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_COD"
+							cQryIns += "'" + alltrim(CNE->CNE_PRODUT) + "',"
+						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_QUANT"
+							cQryIns += "'" + cValToChar((100 * CNE->CNE_QUANT)/100) + "',"
+												
+						EndIf
+					
+					Next nXi
+
+					cQryIns += "( SELECT MAX(R_E_C_N_O_)+1 FROM AJ7" + _cEmpDes + "0 ))"
+			
+					If (TCSqlExec(cQryIns) < 0)
+			    	Alert("TCSQLError() " + TCSQLError()) 
+					msgalert("Atenção !! Verifique os PROJETOS x TAREFAS Rateados!")
+					Endif
+					Endif
+					
+
+
+			//Endif
+			
+			
+			EndIf
+				
+				CNE->(dbSkip())
+		EndDo
+	EndIf
+
+Endif
+
+Return
+
+
+
+
+
+
+Static Function fGetGAp(_cEmpDes)
+	Local cRetGrp := ""
+	Local cTpDBL  := Alltrim(SuperGetMV("OZ_TPDBL",,"C"))
+	
+	cQuery := "	SELECT DISTINCT DBL_GRUPO FROM " + RetSqlName("DBL") + " A, " + RetSqlName("SAL") + " B "
+	cQuery += " WHERE B.D_E_L_E_T_ = ' ' "
+	cQuery += " AND   B.AL_FILIAL  = A.DBL_FILIAL "
+	cQuery += " AND   B.AL_COD     = A.DBL_GRUPO "
+	cQuery += " AND   B.AL_DOCMD   = 'T' "
+	cQuery += " AND   A.DBL_CC     = '"+_cCNE_XCC+"' "
+	cQuery += " AND   A.DBL_ITEMCT = '"+_cCNE_XITCT+"' "
+	cQuery += " AND   A.DBL_CLVL   = '"+_cCNE_XCLVL+"' "
+	cQuery += " AND   A.DBL_XTIPO  = '"+cTpDBL+"' "
+	cQuery += " AND   A.D_E_L_E_T_ = ' ' "
+	If SELECT("TRADBL") > 0
+		TRADBL->(DbCloseArea())
+	Endif
+	dbUseArea(.T.,"TOPCONN", TcGenQry(,,cQuery),"TRADBL",.T.,.T.)
+	DbSelectArea("TRADBL")
+	TRADBL->(dbGoTop())
+	Do While TRADBL->(!Eof())
+		cQry := " SELECT SAL.AL_COD FROM " + RetSqlName("SAL") + " SAL " 
+		cQry += " WHERE SAL.AL_COD = '"+TRADBL->DBL_GRUPO+"' "
+		cQry += " AND   SAL.AL_DOCMD = 'T' "
+		cQry += " AND   SAL.D_E_L_E_T_ <> '*' "                      
+		If SELECT("TRBSAL") > 0
+			TRBSAL->(DbCloseArea())
+		Endif		
+		dbUseArea(.T.,"TOPCONN", TcGenQry(,,cQry),"TRBSAL",.T.,.T.)
+
+		If !Empty(TRBSAL->AL_COD)
+			cRetGrp := TRBSAL->AL_COD
+			Return(cRetGrp)
+		Endif
+
+		TRBSAL->(DbCloseArea())
+		dbSelectArea("TRADBL")
+		TRADBL->(dbSkip())
+	EndDo
+
+Return(cRetGrp)
+
+
+User Function PegaDes()
+DbSelectArea("ZF9")
+dbSetOrder(1) 
+If dbSeek(xFilial("ZF9")+CNZ->CNZ_PROJET+CNZ->CNZ_TAREFA)  
+cDestar := substring(ZF9_DESCR,1,30)
+else
+cDestar :=" " 
+endif
+Return(cDestar)
+
+User Function PegaDes1()
+DbSelectArea("ZF9")
+dbSetOrder(1) 
+If dbSeek(xFilial("ZF9")+CNE->CNE_PROJET+CNE->CNE_TAREFA)  
+cDestar := substring(ZF9_DESCR,1,30)
+else
+cDestar :=" " 
+endif
+Return(cDestar)
+
+
+User Function PegaItem()
+DbSelectArea("SC7")
+dbSetOrder(4) 
+cItePed := ""
+If dbSeek(xFilial("SC7")+CNE->CNE_PRODUT + CNE->CNE_PEDIDO)  
+While !SC7->((Eof()) .And. SC7->C7_PRODUTO=CNE->CNE_PRODUT .and. SC7->C7_NUM=CNE->CNE_PEDIDO) 
+if SC7->C7_QUANT == CNE->CNE_QUANT .AND. SC7->C7_PRECO == CNE->CNE_VLUNIT
+cItePed := SC7->C7_ITEM
+exit
+endif
+SC7->(dbSkip())
+Enddo
+Endif
+Return(cItePed)
+
+
+
+
