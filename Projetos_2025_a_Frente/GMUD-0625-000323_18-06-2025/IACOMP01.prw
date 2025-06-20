@@ -14,6 +14,7 @@ User function IACOMP01()
 	Local aGetAre := GetArea()
 	Local aCN9Are := CN9->(GetArea())
 	Local aCNDAre := CND->(GetArea())
+	//Local aCNEAre := CNE->(GetArea())
 	Private lMigRat := .F.
 	Private _cCNE_XCC   := ""
 	Private _cCNE_XITCT := "" 
@@ -53,8 +54,7 @@ User function IACOMP01()
 		
 
 	MsgRun("Aguarde...","Processando Rateio...",{|| fMigRat() })
-
-	//If lMigRat := .T.
+//If lMigRat := .T.
 
 	MsgRun("Aguarde...","Processando Alçada...",{|| fMigAlc() })
 			
@@ -320,7 +320,7 @@ Return
 Static Function fMigRat()
 	Local nXi := 0
 	Local nXp := 0
-//	Local cRa := 0  // Controle dos rateios CNZ e CNE
+	Local cRa := 0  // Controle dos rateios CNZ e CNE
 	Local cDestar := ""
 	Local cQryIns := ""
 	Local cNumMed := ""
@@ -336,18 +336,23 @@ if len(alltrim(cNumPed))==6
 	dbSelectArea("CNE")
 	CNE->(dbSetOrder(04))
 	If CNE->(dbSeek(CND->CND_FILIAL + CND->CND_NUMMED))	
-	cNumMed := CNE->CNE_NUMMED
-	cNumPed := CNE->CNE_PEDIDO
+		cNumMed := CNE->CNE_NUMMED
+		cNumPed := CNE->CNE_PEDIDO
+		aCNEAre := CNE->(GetArea())
+
 	//If CNE->(dbSeek(CND->CND_FILIAL + CND->CND_CONTRA + CND->CND_REVISA + CND->CND_NUMERO + CND->CND_NUMMED))
-		Do While !CNE->(Eof()) .And. alltrim(CNE->CNE_NUMMED)==alltrim(cNumMed)
+		Do While !CNE->(Eof()) .And. alltrim(CNE->CNE_NUMMED)==alltrim(cNumMed)  
+
+		If CNE->CNE_QUANT>0	
+       		cRa := cRa +1
+			aCNEAre := CNE->(GetArea())
+			//msgalert("PASSEI PELA CNE!"+strzero(cRa,5,0))
 			dbSelectArea("CNZ")
 			dbSetOrder(08)
 			dbGoTop()
 		    If CNZ->(dbSeek(CNE->CNE_FILIAL + CNE->CNE_CONTRA + CNE->CNE_NUMMED + CNE->CNE_ITEM ))
-		
-
 				lMigRat := .T.
-				Do While !CNZ->(Eof()) .And. alltrim(CNZ_NUMMED)==alltrim(cNumMed) .and. CNZ->CNZ_ITCONT= alltrim(CNE->CNE_ITEM)
+				Do While !CNZ->(Eof()) .And. alltrim(CNZ_NUMMED)==alltrim(cNumMed) .and. CNZ->CNZ_ITCONT==alltrim(CNE->CNE_ITEM)
 				//Do While !CNZ->(Eof()) .And. CNE->CNE_FILIAL + CNE->CNE_CONTRA + CNE->CNE_REVISA + CNE->CNE_NUMMED + CNE->CNE_ITEM 		   == CNZ->CNZ_FILIAL + CNZ->CNZ_CONTRA + CNZ->CNZ_REVISA + CNZ->CNZ_NUMMED + CNZ->CNZ_ITCONT
 					nXp := nXp + 1
 
@@ -509,9 +514,8 @@ if len(alltrim(cNumPed))==6
 					
 					cQryIns += "R_E_C_N_O_) VALUES ("
 				    
-					if !Empty(CNE->CNE_PROJET)
+				if !Empty(CNE->CNE_PROJET)
 					For nXi := 1 to Len(aLisAj7)
-					
 						If Alltrim(aLisAj7[nXi]) == "AJ7_FILIAL"
 							cQryIns +=  "'" + _cFilDes + "',"
 						ElseIf Alltrim(aLisAj7[nXi]) == "AJ7_NUMPC"
@@ -542,19 +546,14 @@ if len(alltrim(cNumPed))==6
 			    	Alert("TCSQLError() " + TCSQLError()) 
 					msgalert("Atenção !! Verifique os PROJETOS x TAREFAS Rateados!")
 					Endif
-					Endif
-					
 
-
-			//Endif
-			
-			
+				Endif
 			EndIf
-				
-				CNE->(dbSkip())
+			RestArea(aCNEAre)
+		Endif	
+		CNE->(dbSkip())
 		EndDo
 	EndIf
-
 Endif
 
 Return
@@ -630,10 +629,10 @@ Return(cDestar)
 
 User Function PegaItem()
 DbSelectArea("SC7")
-dbSetOrder(4) 
-cItePed := ""
-If dbSeek(xFilial("SC7")+CNE->CNE_PRODUT + CNE->CNE_PEDIDO)  
-While !SC7->((Eof()) .And. SC7->C7_PRODUTO=CNE->CNE_PRODUT .and. SC7->C7_NUM=CNE->CNE_PEDIDO) 
+dbSetOrder(1) 
+cItePed := "0001"
+If dbSeek(xFilial("SC7")+CNE->CNE_PEDIDO + cItePed + SPACE(4))  
+While !SC7->((Eof()) .And. SC7->C7_NUM=CNE->CNE_PEDIDO) 
 if SC7->C7_QUANT == CNE->CNE_QUANT .AND. SC7->C7_PRECO == CNE->CNE_VLUNIT
 cItePed := SC7->C7_ITEM
 exit
