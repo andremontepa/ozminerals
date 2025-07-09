@@ -1,0 +1,587 @@
+#include "tlpp-core.th"
+#include "tlpp-rest.th"
+#include "protheus.ch"
+#include "tbiconn.ch"
+#include "topconn.ch"
+#include "rwmake.ch"
+
+/*/{Protheus.doc} RT02JB01
+Job para substituição e restauração de aprovadores com validações robustas e integridade de dados,
+incluindo tratamento por empresa logada.
+
+@type function
+@author Seu Nome
+@since 15/03/2024
+@version 3.3
+@description
+- Substitui aprovadores na tabela SAL durante o processo de substituição
+- Grava histórico na ZZZ incluindo RECNO original da SAL
+- Restaura aprovadores na SAL durante o processo de restauração usando RECNO da ZZZ
+- Atualiza documentos relacionados (SCR010, SCR030, SCR040)
+- Validações completas de integridade de dados
+/*/
+
+// Constantes globais
+#define STATUS_ATIVO          "A"
+#define STATUS_FINALIZADO     "F"
+#define TIPO_EXEC_MANUAL      "M"
+#define TIPO_EXEC_AUTOMATICO  "A"
+#define LOG_HEADER            "[RT02JB01]"
+
+// Variáveis estáticas
+Static lLogAtivo := .T.
+
+/*/{Protheus.doc} RT02JB01
+Função principal do programa.
+
+@param cEmp Código da empresa (opcional)
+@param cFil Código da filial (opcional)
+@return Nil
+/*/
+User Function RT02JB02(cEmp, cFil)
+	Local aDadosAL := {}
+	Local aDadosCR := {}
+	Local lExecAuto := .T.
+
+	// Configura ambiente RPC
+	RpcSetType(3)
+	RpcSetEnv(If(Empty(cEmp),"01",cEmp), If(Empty(cFil),"01",cFil),,,, GetEnvServer(), {"SAL","SAK","ZZY","ZZZ","SCR"})
+
+	// Processamento principal
+	ProcessarSubstituicoes(@aDadosAL, @aDadosCR, lExecAuto)
+
+	// Finalização
+	RpcClearEnv()
+Return
+
+/*/{Protheus.doc} ProcessarSubstituicoes
+Controla o fluxo principal de substituições e restaurações.
+
+@param aDadosAL Array para armazenar dados de grupos
+@param aDadosCR Array para controle de documentos
+@param lExecAuto Indica se é execução automática (.T.) ou manual (.F.)
+@return Nil
+/*/
+Static Function ProcessarSubstituicoes(aDadosAL, aDadosCR, lExecAuto)
+	Local cAliasZZY := GetNextAlias()
+	Local cQuery := ""
+
+	// Monta query conforme tipo de execução
+	cQuery := "SELECT * FROM "+RetSqlName("ZZY")+" WHERE D_E_L_E_T_ = ' ' "
+	cQuery += If(lExecAuto, "AND ZZY_TPEXEC = '"+TIPO_EXEC_AUTOMATICO+"' ", "AND ZZY_TPEXEC = '"+TIPO_EXEC_MANUAL+"' ")
+	cQuery += "AND ZZY_STATUS IN ('AA','AP','MA','MP')"
+
+	DbUseArea(.T., 'TOPCONN', TcGenQry(,,cQuery), cAliasZZY, .F., .T.)
+
+	(cAliasZZY)->(DbGoTop())
+	While !(cAliasZZY)->(Eof())
+		ProcessarRegra(cAliasZZY, aDadosAL, aDadosCR, lExecAuto)
+		(cAliasZZY)->(DbSkip())
+	End
+
+	(cAliasZZY)->(DbCloseArea())
+Return
+
+/*/{Protheus.doc} ProcessarRegra
+Processa uma regra individual conforme seu status.
+
+@param cAliasZZY Alias da tabela ZZY
+@param aDadosAL Array de dados dos grupos
+@param aDadosCR Array de controle de documentos
+@param lExecAuto Flag de execução automática
+@return Nil
+/*/
+Static Function ProcessarRegra(cAliasZZY, aDadosAL, aDadosCR, lExecAuto)
+	Local cStatus := (cAliasZZY)->ZZY_STATUS
+
+	Do Case
+	Case cStatus $ "AA/MA/AP/MP" .AND. STOD((cAliasZZY)->ZZY_DTFIM) > DATE()
+		ProcessarSubstituicao(cAliasZZY, aDadosAL, aDadosCR, lExecAuto)
+
+	Case cStatus $ "AP/MP" .AND. STOD((cAliasZZY)->ZZY_DTFIM) < DATE()
+		ProcessarRestauracao(cAliasZZY, aDadosAL, aDadosCR, lExecAuto)
+
+	Otherwise
+		msglog("Status de regra inválido: " + cStatus + " - Regra: " + (cAliasZZY)->ZZY_CODIGO)
+	EndCase
+
+	// Atualiza status da regra após processamento
+	AtualizarStatusRegra(cAliasZZY)
+Return
+
+/*/{Protheus.doc} ProcessarSubstituicao
+Executa a substituição de aprovadores, atualizando diretamente a tabela SAL.
+
+@param cAliasZZY Alias da tabela ZZY
+@param aDadosAL Array de dados dos grupos
+@param aDadosCR Array de controle de documentos
+@param lExecAuto Flag de execução automática
+@return Nil
+/*/
+Static Function ProcessarSubstituicao(cAliasZZY, aDadosAL, aDadosCR, lExecAuto)
+	Local cAprovSub := AllTrim((cAliasZZY)->ZZY_SUBST)
+	Local cAprovOrig := AllTrim((cAliasZZY)->ZZY_APROV)
+	Local cUserSub := GetUserSAK(cAprovSub)
+
+	// Validação do substituto
+	If !ValidarSubstituto(cAliasZZY, cAprovSub)
+		Return
+	EndIf
+
+	// Busca grupos para substituição
+	BuscarGruposParaSubstituicao(cAliasZZY, aDadosAL, aDadosCR, cAprovSub, lExecAuto)
+
+	// Atualiza registros na tabela SAL
+	AtualizarRegistrosSAL(aDadosAL, cAprovOrig, cAprovSub, cUserSub)
+
+	// Atualiza documentos se necessário
+	If Len(aDadosCR) > 0
+		AtualizarDocumentos(aDadosCR)
+	EndIf
+
+	// Grava histórico na ZZZ
+	GravarHistoricoZZZ(aDadosAL, "I",cAliasZZY)
+Return
+
+/*/{Protheus.doc} AtualizarRegistrosSAL
+Atualiza os registros na tabela SAL com o novo aprovador.
+
+@param aDadosAL Array com dados dos grupos
+@param cAprovOrig Aprovador original
+@param cAprovSub Aprovador substituto
+@param cUserSub Usuário substituto
+@return Nil
+/*/
+Static Function AtualizarRegistrosSAL(aDadosAL, cAprovOrig, cAprovSub, cUserSub)
+	Local nX := 0
+	Local cWhere := ""
+	Local lSucesso := .T.
+	Local cAlias := GetNextAlias()
+	Local nRecno := 0
+
+
+	For nX := 1 To Len(aDadosAL)
+		// Monta WHERE com todas as chaves necessárias
+		cWhere := "WHERE D_E_L_E_T_ = ' ' "
+		cWhere += "AND AL_FILIAL = '"+aDadosAL[nX][1]+"' "          // Filial
+		cWhere += "AND AL_COD = '"+aDadosAL[nX][2]+"' "             // Grupo
+		cWhere += "AND AL_ITEM = '"+aDadosAL[nX][4]+"' "            // Item
+		cWhere += "AND AL_NIVEL = '"+aDadosAL[nX][7]+"' "           // Nível
+		cWhere += "AND AL_APROV = '"+cAprovOrig+"' "                // Aprovador original
+
+		// PRIMEIRO obtém o RECNO antes de qualquer atualização
+		DbUseArea(.T., 'TOPCONN', TcGenQry(,,;
+			"SELECT R_E_C_N_O_ FROM "+RetSqlName("SAL")+" "+cWhere),;
+			cAlias, .F., .T.)
+
+		If (cAlias)->(Eof())
+			// Registro não encontrado - marca como falha
+			lSucesso := .F.
+			msglog("Registro não encontrado: "+aDadosAL[nX][2]+"/"+aDadosAL[nX][4]+"/"+aDadosAL[nX][7])
+		Else
+			// Armazena o RECNO original no array ANTES do UPDATE
+			nRecno := (cAlias)->R_E_C_N_O_
+			aDadosAL[nX][13] := nRecno
+
+			// Agora executa o UPDATE
+			if   TcSqlExec("UPDATE "+RetSqlName("SAL")+" SET " +;
+					"AL_APROV = '"+cAprovSub+"', " +;                  // Novo aprovador
+				"AL_USER = '"+cUserSub+"' " +;                      // Novo usuário
+				cWhere)<0
+
+				// Verifica se o UPDATE afetou algum registro
+
+				lSucesso := .F.
+				msglog("Falha ao atualizar registro (RECNO: "+AllTrim(Str(nRecno))+")")
+			EndIf
+		EndIf
+
+		(cAlias)->(DbCloseArea())
+
+		// Se houve falha, interrompe o processo
+		If !lSucesso
+			Exit
+		EndIf
+	Next nX
+
+	// Finaliza transação
+	If lSucesso
+
+		msglog("Atualização concluída: "+AllTrim(Str(nX-1))+" registros modificados")
+	Else
+
+		msglog("Erro na atualização - Rollback executado")
+	EndIf
+Return
+/*/{Protheus.doc} ProcessarRestauracao
+Executa a restauração de aprovadores usando os dados da ZZZ.
+
+@param cAliasZZY Alias da tabela ZZY
+@param aDadosAL Array de dados dos grupos
+@param aDadosCR Array de controle de documentos
+@param lExecAuto Flag de execução automática
+@return Nil
+/*/
+Static Function ProcessarRestauracao(cAliasZZY, aDadosAL, aDadosCR, lExecAuto)
+	Local cAliasZZZ := GetNextAlias()
+	Local cAprovFiltro := AllTrim((cAliasZZY)->ZZY_SUBST)
+
+	// Consulta com filtros seguros para restauração
+	Local cQuery := "SELECT * FROM "+RetSqlName("ZZZ")+" WHERE D_E_L_E_T_ = ' ' "
+	cQuery += "AND ZZZ_STATUS = '"+STATUS_ATIVO+"' "
+	cQuery += "AND ZZZ_CODIGO = '"+AllTrim((cAliasZZY)->ZZY_CODIGO)+"' "
+	cQuery += "AND ZZZ_APROV = '"+cAprovFiltro+"'"
+
+	DbUseArea(.T., 'TOPCONN', TcGenQry(,,cQuery), cAliasZZZ, .F., .T.)
+
+	(cAliasZZZ)->(DbGoTop())
+	While !(cAliasZZZ)->(Eof())
+		RestaurarAprovador(cAliasZZY, cAliasZZZ, aDadosAL, aDadosCR)
+		(cAliasZZZ)->(DbSkip())
+	End
+
+	// Atualiza documentos se necessário
+	If Len(aDadosCR) > 0
+		AtualizarDocumentos(aDadosCR)
+	EndIf
+
+	// Atualiza histórico na ZZZ
+	GravarHistoricoZZZ(aDadosAL, "F",cAliasZZY)
+
+	(cAliasZZZ)->(DbCloseArea())
+Return
+
+/*/{Protheus.doc} RestaurarAprovador
+Restaura um aprovador específico usando o RECNO gravado na ZZZ.
+
+@param cAliasZZY Alias da tabela ZZY
+@param cAliasZZZ Alias da tabela ZZZ
+@param aDadosAL Array de dados dos grupos
+@param aDadosCR Array de controle de documentos
+@return Nil
+/*/
+Static Function RestaurarAprovador(cAliasZZY, cAliasZZZ, aDadosAL, aDadosCR)
+	Local nRecnoSAL := (cAliasZZZ)->ZZZ_RECNO // Campo que armazena o RECNO original
+
+	// Restaura registro na SAL
+	DbSelectArea("SAL")
+	SAL->(DbGoTo(nRecnoSAL))
+	IF nRecnoSAL==SAL->(RECNO())
+		RecLock("SAL", .F.)
+		SAL->AL_APROV := (cAliasZZZ)->ZZZ_APORIG // Aprovador original
+		SAL->AL_USER := (cAliasZZZ)->ZZZ_USORIG   // Usuário original
+		SAL->(MsUnlock())
+	Else
+		msglog("Registro não encontrado na SAL (RECNO: " + AllTrim(Str(nRecnoSAL)) + ")")
+	EndIf
+
+	// Prepara dados para atualização de documentos
+	aAdd(aDadosCR, {;
+		(cAliasZZZ)->ZZZ_USORIG,;  // Usuário original
+	(cAliasZZZ)->ZZZ_APORIG,; // Aprovador original
+	(cAliasZZZ)->ZZZ_NIVEL,;     // Nível
+	(cAliasZZZ)->ZZZ_GRUPO,;     // Grupo
+	(cAliasZZY)->ZZY_STATUS,;    // Status da regra
+	(cAliasZZY)->ZZY_APROV,;     // Aprovador substituto
+	GetUserSAK((cAliasZZY)->ZZY_APROV),; // Usuário substituto
+	"R" ;                        // Tipo (R=Restauração)
+	})
+
+	// Prepara dados para histórico ZZZ
+	aAdd(aDadosAL, {;
+		(cAliasZZZ)->ZZZ_FILIAL,;   // Filial
+	(cAliasZZZ)->ZZZ_GRUPO,;    // Grupo
+	(cAliasZZZ)->ZZZ_DESC,;     // Descrição
+	(cAliasZZZ)->ZZZ_ITEM,;     // Item
+	(cAliasZZZ)->ZZZ_APROV,;    // Aprovador
+	(cAliasZZZ)->ZZZ_USER,;     // Usuário
+	(cAliasZZZ)->ZZZ_NIVEL,;    // Nível
+	(cAliasZZZ)->ZZZ_LIBAPR,;   // Liberação aprovação
+	(cAliasZZZ)->ZZZ_AUTLIM,;   // Auto limite
+	(cAliasZZZ)->ZZZ_TPLIB,;    // Tipo liberação
+	(cAliasZZZ)->ZZZ_PERFIL,;   // Perfil
+	STATUS_FINALIZADO,;         // Status
+	nRecnoSAL,;                 // Recno original da SAL
+	(cAliasZZZ)->ZZZ_DOCAE,;    // Doc AE
+	(cAliasZZZ)->ZZZ_DOCCO,;    // Doc CO
+	(cAliasZZZ)->ZZZ_DOCCP,;    // Doc CP
+	(cAliasZZZ)->ZZZ_DOCMD,;    // Doc MD
+	(cAliasZZZ)->ZZZ_DOCNF,;    // Doc NF
+	(cAliasZZZ)->ZZZ_DOCPC,;    // Doc PC
+	(cAliasZZZ)->ZZZ_DOCSA,;    // Doc SA
+	(cAliasZZZ)->ZZZ_DOCSC,;    // Doc SC
+	(cAliasZZZ)->ZZZ_DOCST,;    // Doc ST
+	(cAliasZZZ)->ZZZ_DOCIP,;    // Doc IP
+	(cAliasZZZ)->ZZZ_DOCCT,;    // Doc CT
+	(cAliasZZZ)->ZZZ_DOCGA,;    // Doc GA
+	(cAliasZZZ)->ZZZ_APROSU,;   // Aprovador superior
+	(cAliasZZZ)->ZZZ_USERSU,;   // Usuário superior
+	(cAliasZZZ)->ZZZ_AGRCNN,;   // Agrupa CNN
+	(cAliasZZZ)->ZZZ_XESTOQ,;   // Estoque
+	(cAliasZZZ)->ZZZ_CODIGO;
+		})
+Return
+
+/*/{Protheus.doc} AtualizarDocumentos
+Atualiza documentos pendentes nas tabelas SCR010, SCR030 e SCR040 com o aprovador correto.
+
+@param aDadosCR Array com dados dos documentos a atualizar [cUserOrig, cAprovOrig, cNivel, cGrupo, cStatus, cAprovSub, cUserSub, cTipo]
+@return Nil
+/*/
+Static Function AtualizarDocumentos(aDadosCR)
+	Local nX := 0
+	Local cWhere := ""
+
+	For nX := 1 To Len(aDadosCR)
+		// Monta condição WHERE comum para todas as tabelas
+		cWhere := "WHERE D_E_L_E_T_ = ' ' "
+		cWhere += "AND CR_STATUS IN ('01','02') "    // Documentos pendentes
+		cWhere += "AND CR_GRUPO = '"+aDadosCR[nX][4]+"' "
+		cWhere += "AND CR_NIVEL = '"+aDadosCR[nX][3]+"' "
+		cWhere += "AND CR_USER = '"+aDadosCR[nX][1]+"' "
+		cWhere += "AND CR_APROV = '"+aDadosCR[nX][2]+"'"
+	
+			// Atualiza tabelas de documentos
+			TcSqlExec("UPDATE "+RetSqlName("SCR")+" SET " +;
+				"CR_USER = '"+aDadosCR[nX][7]+"', " +;
+				"CR_APROV = '"+aDadosCR[nX][6]+"' " +;
+				cWhere)
+
+				
+		// Log de atualização
+		msglog("Documentos atualizados para o grupo "+aDadosCR[nX][4])
+	Next nX
+Return
+
+/*/{Protheus.doc} BuscarGruposParaSubstituicao
+Busca grupos para realizar a substituição.
+
+@param cAliasZZY Alias da tabela ZZY
+@param aDadosAL Array para armazenar dados dos grupos
+@param aDadosCR Array para controle de documentos
+@param cAprovSub Código do aprovador substituto
+@param lExecAuto Flag de execução automática
+@return Nil
+/*/
+Static Function BuscarGruposParaSubstituicao(cAliasZZY, aDadosAL, aDadosCR, cAprovSub, lExecAuto)
+	Local cAliasSAL := GetNextAlias()
+	Local cQuery := ""
+	Local cUserSub := GetUserSAK(cAprovSub)
+
+	// Monta query para buscar grupos
+	cQuery := "SELECT * FROM "+RetSqlName("SAL")+" WHERE D_E_L_E_T_ = ' ' "
+	cQuery += "AND AL_APROV = '"+AllTrim((cAliasZZY)->ZZY_APROV)+"'"
+
+	DbUseArea(.T., 'TOPCONN', TcGenQry(,,cQuery), cAliasSAL, .F., .T.)
+
+	(cAliasSAL)->(DbGoTop())
+	While !(cAliasSAL)->(Eof())
+		// Prepara dados para substituição
+		aAdd(aDadosAL, {;
+			AllTrim((cAliasSAL)->AL_FILIAL),;   // Filial
+		AllTrim((cAliasSAL)->AL_COD),;      // Grupo
+		AllTrim((cAliasSAL)->AL_DESC),;     // Descrição
+		AllTrim((cAliasSAL)->AL_ITEM),;     // Item
+		cAprovSub,;                         // Aprovador substituto
+		cUserSub,;                          // Usuário substituto
+		AllTrim((cAliasSAL)->AL_NIVEL),;    // Nível
+		AllTrim((cAliasSAL)->AL_LIBAPR),;   // Liberação aprovação
+		AllTrim((cAliasSAL)->AL_AUTOLIM),;  // Auto limite
+		AllTrim((cAliasSAL)->AL_TPLIBER),;  // Tipo liberação
+		AllTrim((cAliasSAL)->AL_PERFIL),;   // Perfil
+		STATUS_ATIVO,;                      // Status
+		0,;                                 // Recno (será preenchido na ZZZ)
+		AllTrim((cAliasSAL)->AL_DOCAE),;    // Doc AE
+		AllTrim((cAliasSAL)->AL_DOCCO),;    // Doc CO
+		AllTrim((cAliasSAL)->AL_DOCCP),;    // Doc CP
+		AllTrim((cAliasSAL)->AL_DOCMD),;    // Doc MD
+		AllTrim((cAliasSAL)->AL_DOCNF),;    // Doc NF
+		AllTrim((cAliasSAL)->AL_DOCPC),;    // Doc PC
+		AllTrim((cAliasSAL)->AL_DOCSA),;    // Doc SA
+		AllTrim((cAliasSAL)->AL_DOCSC),;    // Doc SC
+		AllTrim((cAliasSAL)->AL_DOCST),;    // Doc ST
+		AllTrim((cAliasSAL)->AL_DOCIP),;    // Doc IP
+		AllTrim((cAliasSAL)->AL_DOCCT),;    // Doc CT
+		AllTrim((cAliasSAL)->AL_DOCGA),;    // Doc GA
+		AllTrim((cAliasSAL)->AL_APROSUP),;  // Aprovador superior
+		AllTrim((cAliasSAL)->AL_USERSUP),;  // Usuário superior
+		AllTrim((cAliasSAL)->AL_AGRCNNG),;  // Agrupa CNN
+		AllTrim((cAliasSAL)->AL_XESTOQ),;   // Estoque
+		(cAliasZZY)->ZZY_CODIGO;
+			})
+
+		// Prepara dados para atualização de documentos
+		aAdd(aDadosCR, {;
+			AllTrim((cAliasSAL)->AL_USER),;     // Usuário original
+		AllTrim((cAliasSAL)->AL_APROV),;    // Aprovador original
+		AllTrim((cAliasSAL)->AL_NIVEL),;    // Nível
+		AllTrim((cAliasSAL)->AL_COD),;      // Grupo
+		(cAliasZZY)->ZZY_STATUS,;           // Status da regra
+		cAprovSub,;                         // Aprovador substituto
+		cUserSub,;                          // Usuário substituto
+		"S" ;                               // Tipo (S=Substituição)
+		})
+
+		(cAliasSAL)->(DbSkip())
+	End
+
+	(cAliasSAL)->(DbCloseArea())
+Return
+
+/*/{Protheus.doc} GravarHistoricoZZZ
+Grava ou atualiza registros na tabela ZZZ (histórico).
+
+@param aDadosAL Array com dados dos grupos
+@param cTipo Tipo de operação ("I"=Inserir, "F"=Finalizar)
+@return Nil
+/*/
+Static Function GravarHistoricoZZZ(aDadosAL, cTipo,cAliasZZY)
+	Local nX := 0
+
+	DbSelectArea("ZZZ")
+	ZZZ->(DbSetOrder(3)) // Índice por ZZY_CODIGO + ZZZ_GRUPO + ZZZ_ITEM
+
+	For nX := 1 To Len(aDadosAL)
+		If cTipo == "I"
+			RecLock("ZZZ", .T.)
+		Else
+			// Para finalizar, busca o registro existente
+			If ZZZ->(DbSeek(XFILIAL('ZZZ')+aDadosAL[nX][30]+aDadosAL[nX][2]+aDadosAL[nX][4]))
+				RecLock("ZZZ", .F.)
+			Else
+				Loop // Não encontrado, passa para o próximo
+			EndIf
+		EndIf
+
+		// Preenche os campos
+		ZZZ->ZZZ_FILIAL  := aDadosAL[nX][1]
+		ZZZ->ZZZ_GRUPO   := aDadosAL[nX][2]
+		ZZZ->ZZZ_DESC    := aDadosAL[nX][3]
+		ZZZ->ZZZ_ITEM    := aDadosAL[nX][4]
+		ZZZ->ZZZ_APROV   := aDadosAL[nX][5]
+		ZZZ->ZZZ_USER    := aDadosAL[nX][6]
+		ZZZ->ZZZ_NIVEL   := aDadosAL[nX][7]
+		ZZZ->ZZZ_LIBAPR  := aDadosAL[nX][8]
+		ZZZ->ZZZ_AUTLIM  := aDadosAL[nX][9]
+		ZZZ->ZZZ_TPLIB   := aDadosAL[nX][10]
+		ZZZ->ZZZ_PERFIL  := aDadosAL[nX][11]
+		ZZZ->ZZZ_STATUS  := aDadosAL[nX][12]
+		ZZZ->ZZZ_RECNO := aDadosAL[nX][13]  // RECNO original da SAL
+		ZZZ->ZZZ_DOCAE   := Iif(aDadosAL[nX][14] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCCO   := Iif(aDadosAL[nX][15] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCCP   := Iif(aDadosAL[nX][16] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCMD   := Iif(aDadosAL[nX][17] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCNF   := Iif(aDadosAL[nX][18] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCPC   := Iif(aDadosAL[nX][19] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCSA   := Iif(aDadosAL[nX][20] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCSC   := Iif(aDadosAL[nX][21] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCST   := Iif(aDadosAL[nX][22] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCIP   := Iif(aDadosAL[nX][23] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCCT   := Iif(aDadosAL[nX][24] == "T", .T., .F.)
+		ZZZ->ZZZ_DOCGA   := Iif(aDadosAL[nX][25] == "T", .T., .F.)
+		ZZZ->ZZZ_APROSU  := aDadosAL[nX][26]
+		ZZZ->ZZZ_USERSU  := aDadosAL[nX][27]
+		ZZZ->ZZZ_AGRCNN  := Iif(aDadosAL[nX][28] == "T", .T., .F.)
+		ZZZ->ZZZ_XESTOQ  := Iif(aDadosAL[nX][29] == "T", .T., .F.)
+		ZZZ->ZZZ_CODIGO  := aDadosAL[nX][30]
+
+		// Para inserção, guarda os valores originais
+		If cTipo == "I"
+			ZZZ->ZZZ_APORIG := (cAliasZZY)->ZZY_APROV  // Aprovador original
+			ZZZ->ZZZ_USORIG := GetUserSAK((cAliasZZY)->ZZY_APROV) // Usuário original
+		EndIf
+
+		ZZZ->(MsUnlock())
+	Next nX
+Return
+
+/*/{Protheus.doc} AtualizarStatusRegra
+Atualiza o status da regra na tabela ZZY após processamento.
+
+@param cAliasZZY Alias da tabela ZZY
+@return Nil
+/*/
+Static Function AtualizarStatusRegra(cAliasZZY)
+	Local cNovoStatus := (cAliasZZY)->ZZY_STATUS
+	Local cStatusAtual := (cAliasZZY)->ZZY_STATUS
+
+	Do Case
+	Case cStatusAtual == "AA" .AND. STOD((cAliasZZY)->ZZY_DTFIM) > DATE()
+		cNovoStatus := "AP"
+	Case cStatusAtual == "AP" .AND. STOD((cAliasZZY)->ZZY_DTFIM) < DATE()
+		cNovoStatus := "AF"
+	EndCase
+
+	DbSelectArea("ZZY")
+	If ZZY->(DbSeek(xfilial('ZZY')+(cAliasZZY)->ZZY_CODIGO))
+		RecLock("ZZY", .F.)
+		ZZY->ZZY_STATUS := cNovoStatus
+		ZZY->ZZY_DTEXEC := Date()
+		ZZY->ZZY_HREXEC := Time()
+		ZZY->(MsUnlock())
+	EndIf
+Return
+
+/*/{Protheus.doc} ValidarSubstituto
+Valida se o aprovador substituto pode ser utilizado.
+
+@param cAliasZZY Alias da tabela ZZY
+@param cAprovSub Código do aprovador substituto
+@return Lógico - .T. se válido
+/*/
+Static Function ValidarSubstituto(cAliasZZY, cAprovSub)
+	Local lValido := .T.
+	Local cQuery := ""
+	Local cAliasTmp := GetNextAlias()
+
+	// Verifica se o substituto já existe nos grupos do aprovador original
+	cQuery := "SELECT TOP 1 1 FROM "+RetSqlName("SAL")+" WHERE D_E_L_E_T_ = ' ' "
+	cQuery += "AND AL_APROV = '"+cAprovSub+"' "
+	cQuery += "AND AL_COD IN (SELECT AL_COD FROM "+RetSqlName("SAL")
+	cQuery += " WHERE AL_APROV = '"+AllTrim((cAliasZZY)->ZZY_APROV)+"')"
+
+	DbUseArea(.T., 'TOPCONN', TcGenQry(,,cQuery), cAliasTmp, .F., .T.)
+	If !(cAliasTmp)->(Eof())
+		msglog("Substituto já cadastrado nos grupos - Regra: " + (cAliasZZY)->ZZY_CODIGO)
+		lValido := .F.
+	EndIf
+	(cAliasTmp)->(DbCloseArea())
+
+Return lValido
+
+/*/{Protheus.doc} GetUserSAK
+Obtém o usuário associado a um código de aprovador.
+
+@param cCodAprov Código do aprovador
+@return Character - Código do usuário
+/*/
+Static Function GetUserSAK(cCodAprov)
+	Local cUser := ""
+	Local cAlias := GetNextAlias()
+	Local cQuery := "SELECT AK_USER FROM "+RetSqlName("SAK")+" "
+	cQuery += "WHERE AK_COD = '"+AllTrim(cCodAprov)+"' "
+	cQuery += "AND D_E_L_E_T_ = ' '"
+
+	DbUseArea(.T., 'TOPCONN', TcGenQry(,,cQuery), cAlias, .F., .T.)
+
+	If !(cAlias)->(Eof())
+		cUser := AllTrim((cAlias)->AK_USER)
+	EndIf
+
+	(cAlias)->(DbCloseArea())
+Return cUser
+
+/*/{Protheus.doc} msglog
+Registra mensagens de log.
+
+@param cMsg Mensagem a ser registrada
+@return Nil
+/*/
+Static Function msglog(cMsg)
+	Local cDtHr := DtoC(Date())+" "+Time()
+
+	If lLogAtivo
+		// Grava no console
+		ConOut(LOG_HEADER + " " + cDtHr + " - " + cMsg)
+	EndIf
+Return

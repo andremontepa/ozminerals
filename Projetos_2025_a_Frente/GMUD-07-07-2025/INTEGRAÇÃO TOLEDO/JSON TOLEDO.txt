@@ -1,0 +1,27 @@
+http://10.106.10.24:8400/rest/OZ01TOL/new
+
+
+ {"empresa": "07605563000586",
+	 "produto": "12200",
+	 "placacar": "ABC-1234",
+	 "placavei": "ABC-9999",
+	 "nomemoto": "JULIO HUMBERTO MARTINS DA CUNHA",
+	 "cpfmotor": "00431670803",
+	 "pesobrut": 9999999999.99,
+	 "pesoliqu": 9999999999.99,
+	 "pesotara": 9999999999.99}
+	
+
+	// 01/02 - Antas = Filial 02 AVB MINERAÇÃO = FILIAL CURIONOPOLIS
+	// Cnpj : 07605563000586
+	// Codigo : 000009 / 01
+	// Destino: 000127 / 01
+	// cProdu = 12200
+	// cTes   =
+	// 01/06 - Pedra Branca = Filial 06 AVB MINERAÇÃO = FILIAL AGUA AZUL DO NORTE
+	// Cnpj : 07605563000748
+	// Codigo : 000127 / 01
+	// Destino: 000009 / 01
+    // cProdu = 014983
+    // cTes   = 
+
