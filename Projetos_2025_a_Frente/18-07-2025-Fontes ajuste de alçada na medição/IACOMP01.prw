@@ -22,6 +22,7 @@ User function IACOMP01()
 	Local cItemoz   := ""  
 	Local cClvloz   := ""
     Local cMedica   := CND->CND_NUMMED  // Numero Medição
+	Local cItemne   := ""   // Numero do Item na CNE
 
 	Private lMigRat := .F.
 	Private _cCNE_XCC   := ""
@@ -43,8 +44,9 @@ User function IACOMP01()
 		nreg1 := CNE->(recno())
 		nreg2 := CXN->(recno())
 
-		CNE->(DbSetOrder(5))
+ 		CNE->(DbSetOrder(5))
 		CNE->(DbSeek(CND->(CND_FILIAL+CND_CONTRA+CND_REVISA+CND_NUMMED)))
+		cItemne   := CNE->CNE_ITEM
 	
 		CXN->(DBsEToRDER(1))
 		CXN->(DbSeek(CND->(CND_FILIAL+CND_CONTRA+CND_REVISA+CND_NUMMED)+CNE->CNE_NUMERO))
@@ -62,7 +64,7 @@ User function IACOMP01()
 					
 					    Dbselectarea("CNZ")
                         Dbsetorder(8) 
-							if Dbseek(xFilial()+cContra+cMedica+"0001")  
+							if Dbseek(xFilial()+cContra+cMedica+cItemne)  
 							cCustoz := CNZ->CNZ_CC
 							cItemoz := CNZ->CNZ_ITEMCT
 							cClvloz := CNZ->CNZ_CLVL
@@ -608,10 +610,6 @@ if len(alltrim(cNumPed))==6
 Endif
 
 Return
-
-
-
-
 
 
 Static Function fGetGAp(_cEmpDes)
